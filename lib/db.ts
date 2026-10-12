@@ -77,6 +77,12 @@ const supabaseKey =
   process.env.SUPABASE_PUBLISHABLE_KEY ||
   process.env.SUPABASE_ANON_KEY;
 
+if (typeof globalThis.WebSocket === "undefined") {
+  try {
+    globalThis.WebSocket = require("ws");
+  } catch {}
+}
+
 export const supabase = (supabaseUrl && supabaseKey) 
   ? createClient(supabaseUrl, supabaseKey) 
   : null;
