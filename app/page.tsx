@@ -497,7 +497,7 @@ export default function Dashboard() {
     setDispatchStatus("Triggering dispatch...");
     try {
       const campParam = activeCampaign ? `&campaign_id=${activeCampaign.id}` : "";
-      const res = await fetch(`/api/cron/dispatch?${force ? "force=true" : ""}${campParam}`);
+      const res = await fetch(`/api/cron/dispatch?secret=sovereign_sequencer_secret_123&${force ? "force=true" : ""}${campParam}`);
       const data = await res.json();
       setDispatchStatus(`[${data.status}] ${data.message || (data.success ? `Sent to ${data.lead} via ${data.inbox}` : data.error)}`);
       fetchData();

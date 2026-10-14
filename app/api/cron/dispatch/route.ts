@@ -17,18 +17,30 @@ async function handleDispatch(req: Request) {
   const startTime = Date.now();
 
   try {
-    // 1. Cron Secret Auth (optional in dev, required in production if set)
+    // 1. Cron Secret Auth (Allow Bearer token, query param secret, or same-origin dashboard UI)
+    const url = new URL(req.url);
     const authHeader = req.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      // In dev mode allow manual trigger if secret isn't configured
+    const querySecret = url.searchParams.get("secret");
+    
+    const secFetchSite = req.headers.get("sec-fetch-site");
+    const referer = req.headers.get("referer") || "";
+    const host = req.headers.get("host") || "";
+    const isSameOrigin = secFetchSite === "same-origin" || (!!host && referer.includes(host));
+
+    const isAuthorized = 
+      !cronSecret || 
+      authHeader === `Bearer ${cronSecret}` || 
+      querySecret === cronSecret || 
+      isSameOrigin;
+
+    if (!isAuthorized) {
       if (process.env.NODE_ENV === "production") {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
     }
 
     // 2. Identify Target Campaign / Next Due Lead
-    const url = new URL(req.url);
     const campaignId = url.searchParams.get("campaign_id") || undefined;
     const forceSend = url.searchParams.get("force") === "true";
 
