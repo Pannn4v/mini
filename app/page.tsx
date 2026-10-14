@@ -23,7 +23,10 @@ import {
   Settings2,
   FileText,
   SlidersHorizontal,
-  FileCode
+  FileCode,
+  Eye,
+  Copy,
+  Check
 } from "lucide-react";
 
 interface Campaign {
@@ -105,6 +108,82 @@ export default function Dashboard() {
   const [editBody, setEditBody] = useState("");
   const [seqSavedMessage, setSeqSavedMessage] = useState(false);
 
+  // Inspect Copy Modal State
+  const [inspectingLead, setInspectingLead] = useState<Lead | null>(null);
+  const [showRawSpintax, setShowRawSpintax] = useState(false);
+  const [copySuccessNotice, setCopySuccessNotice] = useState(false);
+
+  // Outbound Logs Scoped Filter
+  const [logsFilterMode, setLogsFilterMode] = useState<"current" | "all">("current");
+
+  // Florida Target Timezone Helpers
+  const [floridaTime, setFloridaTime] = useState("");
+  const [localTime, setLocalTime] = useState("");
+
+  useEffect(() => {
+    const updateClocks = () => {
+      try {
+        const now = new Date();
+        setFloridaTime(now.toLocaleTimeString("en-US", {
+          timeZone: "America/New_York",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }));
+        setLocalTime(now.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }));
+      } catch (e) {}
+    };
+    updateClocks();
+    const t = setInterval(updateClocks, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const isFloridaWindowActive = () => {
+    try {
+      const timeStr = new Date().toLocaleTimeString("en-US", {
+        timeZone: "America/New_York",
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const [h, m] = timeStr.split(":").map(Number);
+      const mins = h * 60 + m;
+      return mins >= (7 * 60 + 30) && mins < (18 * 60);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const renderLeadCopy = (template: string, lead: Lead, raw: boolean = false): string => {
+    if (!template) return "";
+    let text = template;
+    const vars: Record<string, string> = {
+      first_name: (lead.recipient_name || "").split(" ")[0] || "there",
+      name: lead.recipient_name || "there",
+      company_name: lead.company_name || "your company",
+      company: lead.company_name || "your company",
+      city: lead.city || "your area",
+    };
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.replace(new RegExp(`\\{${k}\\}`, "g"), v);
+    }
+    if (!raw) {
+      const spintaxRegex = /\{([^{}]+)\}/g;
+      while (spintaxRegex.test(text)) {
+        text = text.replace(spintaxRegex, (match, choicesStr) => {
+          if (!choicesStr.includes("|")) return match;
+          const choices = choicesStr.split("|");
+          return choices[0].trim();
+        });
+      }
+    }
+    return text;
+  };
+
   const fetchData = async () => {
     try {
       const [cRes, iRes, lRes, logRes] = await Promise.all([
@@ -171,8 +250,8 @@ export default function Dashboard() {
 
       if (!defaultSub) {
         if (newCampMarket === "SCHOOL_WIFI") {
-          defaultSub = "{central fl charter rfp / cabling scope|volusia charter school tender} / crew availability";
-          defaultBod = "{Hi|Hey|Good morning} {first_name},\n\nReaching out directly to {company_name} regarding the Category 2 low-voltage cabling scope for Burns Science & Technology Charter School in Volusia County.\n\nThe deployment calls for Cat6A plenum drops, patch panels, 24/48-port PoE switching, and indoor/outdoor Access Point mounting (~90 AP units across the campus).\n\nAre you open to reviewing the spec sheet and BoQ before bidding locks?\n\nBest,\nPandu";
+          defaultSub = "{central fl charter rfp / cabling scope|central fl school cabling inquiry} / crew availability";
+          defaultBod = "{Hi|Hey|Good morning} {first_name},\n\nReaching out because I connect Florida infrastructure contractors with local school campuses (I do this independently, I don't represent them).\n\nI have an active public charter campus in the Central Florida corridor with an open Cat6 cabling, core switching, and Wi-Fi scope before the competitive filing locks.\n\nBefore I route anyone your way, would you let me know if your team has room to take on another project this quarter?\n\nBest,\nPandu";
         } else if (newCampMarket === "AIRPORT_PAVING") {
           defaultSub = "airport work in {city} / paving contractor availability";
           defaultBod = "{Hi|Hey|Good morning} {first_name},\n\nI have municipal airports in {city} with open FAA AIP runway & taxiway rehabilitation work looking for qualified paving contractors before the letting.\n\nDo you have asphalt/paving crew capacity for airport jobs?\n\nBest,\nPandu";
@@ -284,11 +363,11 @@ export default function Dashboard() {
         const formattedLeads = parsed.map((item: any, idx: number) => ({
           campaign_id: activeCampaign.id,
           recipient_name: item.contact_name || item.name || item.contact || "Partner",
-          recipient_email: item.email,
-          company_name: item.company_name || item.company || "Company",
+          recipient_email: item.email || item.contact_email,
+          company_name: item.company_name || item.school_district || item.company || "Company",
           city: item.city || "Florida",
-          subject_template: item.subject_template || item.subject || activeCampaign.subject_default || "Inquiry",
-          body_template: item.body_template || item.body || activeCampaign.body_default || "Hello",
+          subject_template: item.outbound_template?.subject || item.subject_template || item.subject || activeCampaign.subject_default || "Inquiry",
+          body_template: item.outbound_template?.body || item.body_template || item.body || activeCampaign.body_default || "Hello",
           status: "PENDING",
           scheduled_at: new Date(Date.now() + idx * 5 * 60 * 1000).toISOString(),
         }));
@@ -576,13 +655,23 @@ export default function Dashboard() {
           </div>
 
           <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4">
-            <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider">Target Schedule</div>
-            <div className="mt-2 text-sm font-bold text-white font-mono">
-              {activeCampaign ? `${activeCampaign.window_start} - ${activeCampaign.window_end}` : "07:30 - 18:00"} EST
+            <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider flex items-center justify-between">
+              <span>Target Schedule (EST)</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                isFloridaWindowActive() 
+                  ? "bg-[#064e3b] text-[#34d399] border-[#047857]" 
+                  : "bg-[#18181b] text-[#a1a1aa] border-[#27272a]"
+              }`}>
+                {isFloridaWindowActive() ? "● Window Open" : "○ Outside Window (Sleep)"}
+              </span>
+            </div>
+            <div className="mt-2 text-sm font-bold text-white font-mono flex items-baseline gap-2">
+              <span>{floridaTime || "EST"}</span>
+              <span className="text-[11px] font-normal text-[#737373]">(Local: {localTime})</span>
             </div>
             <div className="mt-1 text-[11px] text-[#737373] font-mono flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 text-white" />
-              <span>{activeCampaign?.status === "ACTIVE" ? "Autopilot Active" : "Campaign Paused"}</span>
+              <span>07:30 - 18:00 EST Gate · {activeCampaign?.status === "ACTIVE" ? "Autopilot Armed" : "Campaign Paused"}</span>
             </div>
           </div>
         </div>
@@ -880,8 +969,9 @@ export default function Dashboard() {
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Recipient</th>
                     <th className="py-3 px-4">Company</th>
-                    <th className="py-3 px-4">Scheduled / Sent At</th>
+                    <th className="py-3 px-4">Scheduled (EST vs Local)</th>
                     <th className="py-3 px-4">Subject Preview</th>
+                    <th className="py-3 px-4 text-right">Preview Copy</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1F1F1F]">
@@ -893,7 +983,12 @@ export default function Dashboard() {
                     </tr>
                   ) : (
                     currentLeads.map((lead) => (
-                      <tr key={lead.id} className="hover:bg-[#121212] transition-colors">
+                      <tr 
+                        key={lead.id} 
+                        onClick={() => setInspectingLead(lead)}
+                        className="hover:bg-[#171717] transition-colors cursor-pointer group"
+                        title="Click to inspect email copy & preview"
+                      >
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
                             lead.status === "SENT"
@@ -914,12 +1009,29 @@ export default function Dashboard() {
                           <div className="text-[11px] text-[#737373]">{lead.city}</div>
                         </td>
                         <td className="py-3 px-4 text-[#737373]">
-                          {lead.sent_at 
-                            ? new Date(lead.sent_at).toLocaleString() 
-                            : new Date(lead.scheduled_at).toLocaleString()}
+                          <div className="text-white font-mono text-[11px]">
+                            {new Date(lead.scheduled_at).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: true })} EST
+                          </div>
+                          <div className="text-[10px] text-[#666]">
+                            {lead.sent_at 
+                              ? `Sent: ${new Date(lead.sent_at).toLocaleTimeString()}` 
+                              : `Local: ${new Date(lead.scheduled_at).toLocaleTimeString()}`}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-[#A3A3A3] max-w-xs truncate" title={lead.subject_template}>
                           {lead.subject_template}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInspectingLead(lead);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#1C1C1C] border border-[#333] text-white text-[10px] font-mono group-hover:bg-white group-hover:text-black transition-all"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Inspect
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1045,6 +1157,32 @@ export default function Dashboard() {
         {/* TAB 5: OUTBOUND LOGS */}
         {activeTab === "logs" && (
           <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg overflow-hidden">
+            {/* Scoped Logs Header */}
+            <div className="p-3 bg-[#121212] border-b border-[#262626] flex items-center justify-between text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-[#737373]">Logs Scope:</span>
+                <button
+                  onClick={() => setLogsFilterMode("current")}
+                  className={`px-2.5 py-1 rounded transition-all text-xs ${
+                    logsFilterMode === "current"
+                      ? "bg-[#262626] text-white font-semibold border border-[#404040]"
+                      : "text-[#737373] hover:text-white"
+                  }`}
+                >
+                  {activeCampaign ? activeCampaign.name : "Active Campaign"} Only
+                </button>
+                <button
+                  onClick={() => setLogsFilterMode("all")}
+                  className={`px-2.5 py-1 rounded transition-all text-xs ${
+                    logsFilterMode === "all"
+                      ? "bg-[#262626] text-white font-semibold border border-[#404040]"
+                      : "text-[#737373] hover:text-white"
+                  }`}
+                >
+                  All Campaigns ({logs.length})
+                </button>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
                 <thead className="bg-[#121212] border-b border-[#262626] text-[#737373] uppercase">
@@ -1057,14 +1195,26 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1F1F1F]">
-                  {logs.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-[#555]">
-                        No dispatch logs recorded yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    logs.map((log) => (
+                  {(() => {
+                    const leadCampaignMap = new Map(allLeads.map(l => [l.recipient_email?.toLowerCase(), l.campaign_id]));
+                    const displayedLogs = logsFilterMode === "current" && activeCampaign
+                      ? logs.filter(log => {
+                          const cId = leadCampaignMap.get(log.recipient_email?.toLowerCase());
+                          return !cId || cId === activeCampaign.id;
+                        })
+                      : logs;
+
+                    if (displayedLogs.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-[#555]">
+                            No dispatch logs recorded for this campaign view.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return displayedLogs.map((log) => (
                       <tr key={log.id} className="hover:bg-[#121212] transition-colors">
                         <td className="py-3 px-4">
                           <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
@@ -1080,8 +1230,8 @@ export default function Dashboard() {
                         <td className="py-3 px-4 text-[#737373]">{new Date(log.sent_at).toLocaleString()}</td>
                         <td className="py-3 px-4 text-[#555] truncate max-w-xs">{log.smtp_response || "OK"}</td>
                       </tr>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1250,6 +1400,84 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: COPYWRITING INSPECTOR */}
+      {inspectingLead && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0A0A0A] border border-[#333333] rounded-xl max-w-2xl w-full p-6 space-y-4 font-mono shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#262626] pb-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">
+                  Copywriting Inspector · Lead Preview
+                </h3>
+              </div>
+              <button 
+                onClick={() => setInspectingLead(null)} 
+                className="text-[#737373] hover:text-white px-2 py-1 rounded bg-[#171717]"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Lead Meta Card */}
+            <div className="grid grid-cols-2 gap-3 bg-[#121212] p-3 rounded-lg border border-[#222] text-xs">
+              <div>
+                <span className="text-[#737373] text-[10px] uppercase block">Recipient</span>
+                <span className="text-white font-semibold">{inspectingLead.recipient_name}</span>
+                <span className="text-[#a3a3a3] block text-[11px]">{inspectingLead.recipient_email}</span>
+              </div>
+              <div>
+                <span className="text-[#737373] text-[10px] uppercase block">Company & Location</span>
+                <span className="text-white font-semibold">{inspectingLead.company_name}</span>
+                <span className="text-[#a3a3a3] block text-[11px]">{inspectingLead.city || "Florida"}</span>
+              </div>
+            </div>
+
+            {/* Rendered Subject */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] uppercase text-[#737373] font-semibold">Subject Preview</label>
+                <span className="text-[10px] text-[#555] font-mono">Dynamic Variables Resolved</span>
+              </div>
+              <div className="bg-[#050505] border border-[#262626] rounded-md p-3 text-xs text-white font-mono select-all">
+                {renderLeadCopy(inspectingLead.subject_template || activeCampaign?.subject_default || "", inspectingLead, showRawSpintax)}
+              </div>
+            </div>
+
+            {/* Rendered Body */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] uppercase text-[#737373] font-semibold">Body Copywriting Preview</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowRawSpintax(!showRawSpintax)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-[#333] bg-[#171717] text-[#cbd5e1] hover:text-white"
+                  >
+                    {showRawSpintax ? "Show Rendered" : "Show Raw Spintax"}
+                  </button>
+                </div>
+              </div>
+              <div className="bg-[#050505] border border-[#262626] rounded-md p-4 text-xs text-[#cbd5e1] whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto select-all">
+                {renderLeadCopy(inspectingLead.body_template || activeCampaign?.body_default || "", inspectingLead, showRawSpintax)}
+              </div>
+            </div>
+
+            {/* Footer controls */}
+            <div className="flex items-center justify-between pt-3 border-t border-[#1C1C1C] text-xs">
+              <span className="text-[11px] text-[#555]">
+                Status: <strong className="text-white">{inspectingLead.status}</strong> · Campaign: {inspectingLead.campaign_id}
+              </span>
+              <button
+                onClick={() => setInspectingLead(null)}
+                className="px-4 py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-[#D4D4D4] transition-all"
+              >
+                Close Preview
+              </button>
+            </div>
           </div>
         </div>
       )}

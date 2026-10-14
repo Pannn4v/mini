@@ -25,8 +25,8 @@ export async function GET(req: Request) {
 
     // Transform into standard Lead payload
     const leads = data.map((item: any, idx: number) => {
-      let subject = "{central fl charter rfp / cabling scope|volusia charter school tender} / crew availability";
-      let body = "{Hi|Hey|Good morning} {first_name},\n\nReaching out directly to {company_name} regarding the Category 2 low-voltage cabling scope for Burns Science & Technology Charter School in Volusia County.\n\nThe deployment calls for Cat6A plenum drops, patch panels, 24/48-port PoE switching, and indoor/outdoor Access Point mounting (~90 AP units across the campus).\n\nThis is currently in the statutory 28-day E-Rate review window before the school locks their installation vendor.\n\nAre you open to reviewing the spec sheet and BoQ before bidding locks?\n\nBest,\nPandu";
+      let subject = "{central fl charter rfp / cabling scope|central fl school cabling inquiry} / crew availability";
+      let body = "{Hi|Hey|Good morning} {first_name},\n\nReaching out because I connect Florida infrastructure contractors with local school campuses (I do this independently, I don't represent them).\n\nI have an active public charter campus in the Central Florida corridor with an open Cat6 cabling, core switching, and Wi-Fi scope before the competitive filing locks.\n\nBefore I route anyone your way, would you let me know if your team has room to take on another project this quarter?\n\nBest,\nPandu";
 
       if (preset === "airport_35") {
         subject = item.subject || `airport work in ${item.city || "your area"} / contractor availability`;
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
           : `{Hi|Hey|Good morning} {first_name},\n\nI have airports in ${item.city || "your area"} that want more contractors bidding on their next runway and taxiway job.\n\nThanks for reading (also, no call needed, I can easily make the introduction).\n\nBest,\nPandu`;
       } else if (preset === "school_followup_40") {
         subject = item.subject_step2 || item.subject || "Re: central fl charter rfp / crew availability";
-        body = item.body_step2 || item.body || `{Hi|Hey} {first_name},\n\nCircling back on the Burns SciTech E-Rate Category 2 scope in Volusia County before the bid review closes.\n\nDid your estimating team have a chance to look over the cabling BoQ?\n\nBest,\nPandu`;
+        body = item.body_step2 || item.body || `{Hi|Hey} {first_name},\n\nCircling back on the Central Florida charter campus Cat6 cabling & network scope before the competitive filing window locks.\n\nDid your estimating team have a chance to check crew availability for this quarter?\n\nBest,\nPandu`;
       }
 
       return {
