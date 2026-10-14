@@ -23,6 +23,7 @@ dist/
 .env.test.local
 .env.production.local
 *.env
+data/*.json
 
 # Debug logs
 npm-debug.log*
