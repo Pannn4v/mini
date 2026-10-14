@@ -1,0 +1,56 @@
+name: Sovereign Sequencer Cron
+
+on:
+  schedule:
+    # Runs every 10 minutes, 24/7
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force dispatch outside window? (true/false)'
+        required: false
+        default: 'false'
+      campaign_id:
+        description: 'Specific Campaign ID (optional)'
+        required: false
+        default: ''
+
+jobs:
+  dispatch:
+    name: Knock Vercel Dispatcher
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Mini-Instantly Dispatch API
+        run: |
+          FORCE="${{ github.event.inputs.force || 'false' }}"
+          CAMP_ID="${{ github.event.inputs.campaign_id || '' }}"
+          SECRET="${{ secrets.CRON_SECRET || 'sovereign_sequencer_secret_123' }}"
+          
+          ENDPOINT="https://mini-beryl-rho.vercel.app/api/cron/dispatch?force=${FORCE}"
+          if [ -n "$CAMP_ID" ]; then
+            ENDPOINT="${ENDPOINT}&campaign_id=${CAMP_ID}"
+          fi
+          
+          echo "============================================="
+          echo "Triggering Sovereign Sequencer Dispatch..."
+          echo "Target URL: $ENDPOINT"
+          echo "Timestamp UTC: $(date -u)"
+          echo "============================================="
+          
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer $SECRET" \
+            -H "User-Agent: GitHub-Actions-Cron-Sequencer/1.0")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | sed -e '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1 | cut -d':' -f2)
+          
+          echo "Response HTTP Status: $HTTP_CODE"
+          echo "Response Body:"
+          echo "$HTTP_BODY"
+          echo "============================================="
+          
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Dispatcher triggered successfully."
+          else
+            echo "Warning: Dispatcher returned HTTP $HTTP_CODE"
+          fi

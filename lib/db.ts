@@ -124,23 +124,31 @@ const DEFAULT_PRESET_CAMPAIGNS: Campaign[] = [
   },
 ];
 
-function ensureDbFile(): DatabaseSchema {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+function isReadOnlyFs(): boolean {
+  return !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+}
 
-  if (!fs.existsSync(DB_FILE)) {
-    const initialData: DatabaseSchema = {
-      inboxes: [],
-      campaigns: DEFAULT_PRESET_CAMPAIGNS,
-      leads: [],
-      logs: [],
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
-    return initialData;
+function ensureDbFile(): DatabaseSchema {
+  if (isReadOnlyFs()) {
+    return { inboxes: [], campaigns: DEFAULT_PRESET_CAMPAIGNS, leads: [], logs: [] };
   }
 
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    if (!fs.existsSync(DB_FILE)) {
+      const initialData: DatabaseSchema = {
+        inboxes: [],
+        campaigns: DEFAULT_PRESET_CAMPAIGNS,
+        leads: [],
+        logs: [],
+      };
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), "utf-8");
+      return initialData;
+    }
+
     const raw = fs.readFileSync(DB_FILE, "utf-8");
     const data: DatabaseSchema = JSON.parse(raw);
     if (!Array.isArray(data.campaigns) || data.campaigns.length === 0) {
@@ -157,10 +165,15 @@ function ensureDbFile(): DatabaseSchema {
 }
 
 function saveDb(data: DatabaseSchema) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (isReadOnlyFs()) return;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("saveDb skipped (read-only filesystem):", e);
   }
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
 }
 
 // -----------------------------------------------------------------------------
@@ -170,7 +183,7 @@ export async function getInboxes(): Promise<Inbox[]> {
   if (supabase) {
     try {
       const { data, error } = await supabase.from("inboxes").select("*").order("created_at", { ascending: true });
-      if (!error && data) return data as Inbox[];
+      if (!error) return (data || []) as Inbox[];
     } catch (e) {
       console.warn("Supabase getInboxes fallback:", e);
     }
@@ -245,7 +258,7 @@ export async function getCampaigns(): Promise<Campaign[]> {
   if (supabase) {
     try {
       const { data, error } = await supabase.from("campaigns").select("*").order("created_at", { ascending: true });
-      if (!error && data && data.length > 0) return data as Campaign[];
+      if (!error) return (data || []) as Campaign[];
     } catch (e) {
       console.warn("Supabase getCampaigns fallback:", e);
     }
@@ -258,11 +271,13 @@ export async function getCampaign(id?: string): Promise<Campaign | null> {
   if (supabase) {
     try {
       if (id && id !== "undefined") {
-        const { data, error } = await supabase.from("campaigns").select("*").eq("id", id).single();
+        const { data, error } = await supabase.from("campaigns").select("*").eq("id", id).maybeSingle();
         if (!error && data) return data as Campaign;
+        if (!error && !data) return null;
       } else {
         const { data, error } = await supabase.from("campaigns").select("*").limit(1);
         if (!error && data && data.length > 0) return data[0] as Campaign;
+        if (!error) return null;
       }
     } catch (e) {
       console.warn("Supabase getCampaign fallback:", e);
@@ -352,7 +367,7 @@ export async function getLeads(campaignId?: string): Promise<Lead[]> {
         query = query.eq("campaign_id", campaignId);
       }
       const { data, error } = await query;
-      if (!error && data) return data as Lead[];
+      if (!error) return (data || []) as Lead[];
     } catch (e) {
       console.warn("Supabase getLeads fallback:", e);
     }
@@ -450,7 +465,10 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
         query = query.eq("campaign_id", campaignId);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) return data[0] as Lead;
+      if (!error) {
+        if (data && data.length > 0) return data[0] as Lead;
+        return null;
+      }
     } catch (e) {
       console.warn("Supabase getNextDueLead fallback:", e);
     }
@@ -478,9 +496,12 @@ export async function getEligibleInbox(): Promise<Inbox | null> {
         .eq("status", "ACTIVE")
         .order("last_sent_at", { ascending: true });
 
-      if (!error && data && data.length > 0) {
-        const eligible = (data as Inbox[]).find((i) => i.sent_today < i.daily_limit);
-        if (eligible) return eligible;
+      if (!error) {
+        if (data && data.length > 0) {
+          const eligible = (data as Inbox[]).find((i) => i.sent_today < i.daily_limit);
+          if (eligible) return eligible;
+        }
+        return null;
       }
     } catch (e) {
       console.warn("Supabase getEligibleInbox fallback:", e);
@@ -521,7 +542,7 @@ export async function getOutboundLogs(): Promise<OutboundLog[]> {
   if (supabase) {
     try {
       const { data, error } = await supabase.from("outbound_logs").select("*").order("sent_at", { ascending: false }).limit(200);
-      if (!error && data) return data as OutboundLog[];
+      if (!error) return (data || []) as OutboundLog[];
     } catch (e) {
       console.warn("Supabase getOutboundLogs fallback:", e);
     }
