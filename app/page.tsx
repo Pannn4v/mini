@@ -71,7 +71,27 @@ interface Lead {
 
 export default function Dashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("mini_instantly_selected_campaign") || "";
+      } catch (e) {
+        return "";
+      }
+    }
+    return "";
+  });
+
+  // Keep ref synchronized and persist to localStorage
+  const selectedCampaignIdRef = useRef(selectedCampaignId);
+  useEffect(() => {
+    selectedCampaignIdRef.current = selectedCampaignId;
+    if (selectedCampaignId && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("mini_instantly_selected_campaign", selectedCampaignId);
+      } catch (e) {}
+    }
+  }, [selectedCampaignId]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
@@ -196,9 +216,23 @@ export default function Dashboard() {
       if (cRes.ok) {
         const campList: Campaign[] = await cRes.json();
         setCampaigns(campList);
-        if (!selectedCampaignId && campList.length > 0) {
-          setSelectedCampaignId(campList[0].id);
-        }
+        setSelectedCampaignId((prev) => {
+          // 1. If user already has an active selection and it exists in DB, KEEP IT!
+          if (prev && campList.some((c) => c.id === prev)) {
+            return prev;
+          }
+          // 2. Check localStorage
+          if (typeof window !== "undefined") {
+            try {
+              const saved = localStorage.getItem("mini_instantly_selected_campaign");
+              if (saved && campList.some((c) => c.id === saved)) {
+                return saved;
+              }
+            } catch (e) {}
+          }
+          // 3. Fallback to first campaign only if nothing valid selected
+          return campList.length > 0 ? campList[0].id : "";
+        });
       }
       if (iRes.ok) setInboxes(await iRes.json());
       if (lRes.ok) setAllLeads(await lRes.json());
@@ -552,7 +586,15 @@ export default function Dashboard() {
             <span className="text-[#737373] text-[11px]">Campaign:</span>
             <select
               value={selectedCampaignId}
-              onChange={(e) => setSelectedCampaignId(e.target.value)}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setSelectedCampaignId(newId);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem("mini_instantly_selected_campaign", newId);
+                  } catch (err) {}
+                }
+              }}
               className="bg-transparent text-white text-xs font-mono focus:outline-none cursor-pointer pr-2"
             >
               {campaigns.map((c) => (
@@ -915,6 +957,11 @@ export default function Dashboard() {
                         <button
                           onClick={() => {
                             setSelectedCampaignId(camp.id);
+                            if (typeof window !== "undefined") {
+                              try {
+                                localStorage.setItem("mini_instantly_selected_campaign", camp.id);
+                              } catch (err) {}
+                            }
                             setActiveTab("queue");
                           }}
                           className="text-xs font-mono px-2.5 py-1 rounded bg-[#171717] hover:bg-[#262626] text-white border border-[#333333] transition-colors"
@@ -924,6 +971,11 @@ export default function Dashboard() {
                         <button
                           onClick={() => {
                             setSelectedCampaignId(camp.id);
+                            if (typeof window !== "undefined") {
+                              try {
+                                localStorage.setItem("mini_instantly_selected_campaign", camp.id);
+                              } catch (err) {}
+                            }
                             setActiveTab("sequences");
                           }}
                           className="text-xs font-mono px-2.5 py-1 rounded bg-black hover:bg-[#121212] text-[#A3A3A3] hover:text-white border border-[#262626] transition-colors"
@@ -977,7 +1029,7 @@ export default function Dashboard() {
                 <tbody className="divide-y divide-[#1F1F1F]">
                   {currentLeads.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-[#555]">
+                      <td colSpan={6} className="py-12 text-center text-[#737373]">
                         Queue is empty for this campaign. Click "Seed Market" or "Upload JSON" to populate.
                       </td>
                     </tr>
@@ -1207,7 +1259,7 @@ export default function Dashboard() {
                     if (displayedLogs.length === 0) {
                       return (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-[#555]">
+                          <td colSpan={6} className="py-12 text-center text-[#737373]">
                             No dispatch logs recorded for this campaign view.
                           </td>
                         </tr>
