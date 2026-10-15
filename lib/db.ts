@@ -457,17 +457,24 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
 
   if (supabase) {
     try {
+      let activeCampIds: string[] = [];
+      if (campaignId && campaignId !== "all") {
+        activeCampIds = [campaignId];
+      } else {
+        const { data: camps, error: campErr } = await supabase.from("campaigns").select("id").eq("status", "ACTIVE");
+        if (campErr || !camps || camps.length === 0) return null;
+        activeCampIds = camps.map((c) => c.id);
+      }
+
       let query = supabase
         .from("leads")
         .select("*")
         .in("status", ["PENDING", "WAITING_FOLLOWUP"])
+        .in("campaign_id", activeCampIds)
         .lte("scheduled_at", nowIso)
         .order("scheduled_at", { ascending: true })
         .limit(1);
 
-      if (campaignId && campaignId !== "all") {
-        query = query.eq("campaign_id", campaignId);
-      }
       const { data, error } = await query;
       if (!error) {
         if (data && data.length > 0) return data[0] as Lead;
