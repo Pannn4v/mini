@@ -146,12 +146,35 @@ async function handleDispatch(req: Request) {
       }, { status: 500 });
     }
 
-    // 8. Atomic Status Updates
-    await updateLead(lead.id, {
-      status: "SENT",
-      sent_at: new Date().toISOString(),
-      assigned_inbox_id: inbox.id,
-    });
+    // 8. Atomic Status Updates & Multi-Step Sequence Transition
+    const hasFollowup = !!lead.followup_body || (lead.step === 1 && !!lead.followup_subject);
+    const isStep1 = lead.status === "PENDING" && (lead.step === 1 || !lead.step);
+
+    if (isStep1 && hasFollowup) {
+      // Transition to Step 2 (WAITING_FOLLOWUP with 3 days delay)
+      const delayDays = lead.followup_delay_days || 3;
+      const nextScheduled = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000).toISOString();
+      const nextSubject = lead.followup_subject || (lead.subject_template.startsWith("Re:") ? lead.subject_template : `Re: ${lead.subject_template}`);
+      const nextBody = lead.followup_body || lead.body_template;
+
+      await updateLead(lead.id, {
+        status: "WAITING_FOLLOWUP",
+        step: 2,
+        scheduled_at: nextScheduled,
+        sent_at: new Date().toISOString(),
+        assigned_inbox_id: inbox.id,
+        subject_template: nextSubject,
+        body_template: nextBody,
+      });
+    } else {
+      // Completed or single-touch
+      await updateLead(lead.id, {
+        status: "SENT",
+        step: lead.step ? lead.step + 1 : 2,
+        sent_at: new Date().toISOString(),
+        assigned_inbox_id: inbox.id,
+      });
+    }
 
     await updateInbox(inbox.id, {
       sent_today: inbox.sent_today + 1,
@@ -169,15 +192,17 @@ async function handleDispatch(req: Request) {
 
     // 9. Schedule next lead with randomized jitter interval (e.g. 4 to 8 minutes)
     const allLeads = await getLeads();
-    const remainingPending = allLeads.filter((l) => l.status === "PENDING" && l.id !== lead.id);
-    if (remainingPending.length > 0) {
+    const remainingDue = allLeads.filter(
+      (l) => (l.status === "PENDING" || (l.status === "WAITING_FOLLOWUP" && new Date(l.scheduled_at) <= now)) && l.id !== lead.id
+    );
+    if (remainingDue.length > 0) {
       const minMins = campaign.min_interval_mins || 4;
       const maxMins = campaign.max_interval_mins || 8;
       const jitterMins = Math.floor(Math.random() * (maxMins - minMins + 1)) + minMins;
       const nextTime = new Date(Date.now() + jitterMins * 60 * 1000).toISOString();
 
       // Set the immediate next lead
-      await updateLead(remainingPending[0].id, {
+      await updateLead(remainingDue[0].id, {
         scheduled_at: nextTime,
       });
     }

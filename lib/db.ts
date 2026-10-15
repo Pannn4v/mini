@@ -38,7 +38,11 @@ export interface Lead {
   city: string;
   subject_template: string;
   body_template: string;
-  status: "PENDING" | "SENT" | "FAILED" | "SKIPPED";
+  status: "PENDING" | "SENT" | "WAITING_FOLLOWUP" | "REPLIED" | "FAILED" | "SKIPPED";
+  step?: number;
+  followup_subject?: string;
+  followup_body?: string;
+  followup_delay_days?: number;
   scheduled_at: string;
   sent_at?: string;
   assigned_inbox_id?: string;
@@ -456,7 +460,7 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
       let query = supabase
         .from("leads")
         .select("*")
-        .eq("status", "PENDING")
+        .in("status", ["PENDING", "WAITING_FOLLOWUP"])
         .lte("scheduled_at", nowIso)
         .order("scheduled_at", { ascending: true })
         .limit(1);
@@ -478,12 +482,12 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
   const now = new Date();
   
   if (campaignId && campaignId !== "all") {
-    const lead = db.leads.find((l) => l.campaign_id === campaignId && l.status === "PENDING" && new Date(l.scheduled_at) <= now);
+    const lead = db.leads.find((l) => l.campaign_id === campaignId && (l.status === "PENDING" || l.status === "WAITING_FOLLOWUP") && new Date(l.scheduled_at) <= now);
     return lead || null;
   }
 
   const activeCampIds = new Set(db.campaigns.filter((c) => c.status === "ACTIVE").map((c) => c.id));
-  const lead = db.leads.find((l) => activeCampIds.has(l.campaign_id) && l.status === "PENDING" && new Date(l.scheduled_at) <= now);
+  const lead = db.leads.find((l) => activeCampIds.has(l.campaign_id) && (l.status === "PENDING" || l.status === "WAITING_FOLLOWUP") && new Date(l.scheduled_at) <= now);
   return lead || null;
 }
 
