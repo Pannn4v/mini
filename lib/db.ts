@@ -488,6 +488,9 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
 }
 
 export async function getEligibleInbox(): Promise<Inbox | null> {
+  const nowMs = Date.now();
+  const MIN_INBOX_COOLDOWN_MS = 120 * 1000; // 120s cooldown per inbox (anti-collision)
+
   if (supabase) {
     try {
       const { data, error } = await supabase
@@ -498,7 +501,10 @@ export async function getEligibleInbox(): Promise<Inbox | null> {
 
       if (!error) {
         if (data && data.length > 0) {
-          const eligible = (data as Inbox[]).find((i) => i.sent_today < i.daily_limit);
+          const eligible = (data as Inbox[]).find((i) => {
+            const lastSentMs = new Date(i.last_sent_at || 0).getTime();
+            return i.sent_today < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
+          });
           if (eligible) return eligible;
         }
         return null;
@@ -509,7 +515,10 @@ export async function getEligibleInbox(): Promise<Inbox | null> {
   }
 
   const db = ensureDbFile();
-  const candidates = db.inboxes.filter((i) => i.status === "ACTIVE" && i.sent_today < i.daily_limit);
+  const candidates = db.inboxes.filter((i) => {
+    const lastSentMs = new Date(i.last_sent_at || 0).getTime();
+    return i.status === "ACTIVE" && i.sent_today < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
+  });
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => new Date(a.last_sent_at).getTime() - new Date(b.last_sent_at).getTime());
   return candidates[0];

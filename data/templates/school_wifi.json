@@ -1,0 +1,65 @@
+{
+  "market": "school_wifi",
+  "version": "1.0.0",
+  "doctrine": "The 3-Angle Supply Outreach & Multi-Step Sequence Doctrine (100% Factual - Zero Hallucinated Bids)",
+  "active_angles": ["angle_granular_boq", "angle_statutory_vacuum", "angle_florida_regional"],
+  "angles": {
+    "angle_granular_boq": {
+      "angle_id": "angle_granular_boq",
+      "style": "Style A - Granular BoQ & Volume",
+      "target_role": "supply_contractor",
+      "factual_basis": "100% Faktual: Dokumen scope Category 2 diserahkan langsung oleh IT Director Burns Science & Technology Charter School (Volusia County)",
+      "step_1": {
+        "step_number": 1,
+        "type": "FIRST_TOUCH",
+        "subject": "Central FL charter campus cabling scope / {{company_name}} inquiry",
+        "body": "Hi {{first_name}},\n\nThe IT Director at a public charter campus in the Volusia / Central FL corridor just sent over their Category 2 scope for Cat6A drops and WiFi switches.\n\nThe deployment calls for plenum cable runs, patch panels, PoE switching, and indoor/outdoor Access Point mounting across campus (~90 AP units).\n\nThey asked for 1 or 2 qualified local cabling teams with an active SPIN to review the schedule before the allowable contract date locks.\n\nBefore I route their BoQ, wanted to check: do your technicians have open bench capacity in Central FL this quarter?\n\nPandu"
+      },
+      "step_2": {
+        "step_number": 2,
+        "type": "FOLLOWUP_BUMP",
+        "delay_days": 3,
+        "subject": "Re: Central FL charter campus cabling scope / {{company_name}} inquiry",
+        "body": "Hi {{first_name}},\n\nQuick bump on this — wanted to make sure this didn't get buried before I route this campus scope over to another local cabling contractor in Central FL.\n\nDo your crews have open bench capacity right now, or are you fully booked?\n\nPandu"
+      }
+    },
+    "angle_statutory_vacuum": {
+      "angle_id": "angle_statutory_vacuum",
+      "style": "Style B - Statutory 28-Day Window & Thin Bidding",
+      "target_role": "supply_contractor",
+      "factual_basis": "100% Faktual: Masa sanggah 28 hari Form 470 USAC cleared, pihak kampus meminta rekomendasi tim lokal ber-SPIN",
+      "step_1": {
+        "step_number": 1,
+        "type": "FIRST_TOUCH",
+        "subject": "Local E-Rate cabling & network scope / {{company_name}}",
+        "body": "Hi {{first_name}},\n\nA public charter school in Central FL recently cleared its statutory 28-day allowable contract date for Cat6A cabling runs and PoE switches.\n\nThe IT Director reached out asking if I could point 1 or 2 qualified local teams with an active SPIN their way, as qualified bidder traffic on the street has been unusually thin with zero locked incumbent.\n\nSince contract award can happen immediately, wanted to check if your low-voltage crews have bench capacity for Central FL before we route the schedule.\n\nPandu"
+      },
+      "step_2": {
+        "step_number": 2,
+        "type": "FOLLOWUP_BUMP",
+        "delay_days": 3,
+        "subject": "Re: Local E-Rate cabling & network scope / {{company_name}}",
+        "body": "Hi {{first_name}},\n\nFollowing up on this campus scope before walk-through dates lock this month.\n\nAre you open to taking on local educational deployments this cycle, or is your schedule committed?\n\nPandu"
+      }
+    },
+    "angle_florida_regional": {
+      "angle_id": "angle_florida_regional",
+      "style": "Style C - Florida Regional Proximity & Active SPIN",
+      "target_role": "supply_contractor",
+      "factual_basis": "100% Faktual: Kontraktor berlisensi USAC Form 498 di Florida, kampus mengutamakan vendor lokal dibanding kontraktor luar negara bagian",
+      "step_1": {
+        "step_number": 1,
+        "type": "FIRST_TOUCH",
+        "subject": "Florida charter network deployment / {{company_name}}",
+        "body": "Hi {{first_name}},\n\nReaching out because {{company_name}} is registered as an active USAC low-voltage contractor right here in the Florida corridor.\n\nThe IT Director at a local charter campus recently handed over their Category 2 cabling and WiFi scope and specifically asked for verified local Florida contractors for the pre-bid walkthrough rather than out-of-state vendors.\n\nAre your technicians taking on local educational deployments this cycle, or is your bench fully committed?\n\nPandu"
+      },
+      "step_2": {
+        "step_number": 2,
+        "type": "FOLLOWUP_BUMP",
+        "delay_days": 3,
+        "subject": "Re: Florida charter network deployment / {{company_name}}",
+        "body": "Hi {{first_name}},\n\nQuick follow-up on the charter network walkthrough before they finalize local contractor routing this week.\n\nDo your crews have room on the schedule for another Central FL deployment?\n\nPandu"
+      }
+    }
+  }
+}
