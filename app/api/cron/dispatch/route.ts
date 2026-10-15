@@ -151,26 +151,22 @@ async function handleDispatch(req: Request) {
     const isStep1 = lead.status === "PENDING" && (lead.step === 1 || !lead.step);
 
     if (isStep1 && hasFollowup) {
-      // Transition to Step 2 (WAITING_FOLLOWUP with 3 days delay)
+      // Transition to Step 2 (scheduled 3 days delay, marked SENT for Step 1)
       const delayDays = lead.followup_delay_days || 3;
       const nextScheduled = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000).toISOString();
       const nextSubject = lead.followup_subject || (lead.subject_template.startsWith("Re:") ? lead.subject_template : `Re: ${lead.subject_template}`);
       const nextBody = lead.followup_body || lead.body_template;
 
       await updateLead(lead.id, {
-        status: "WAITING_FOLLOWUP",
-        step: 2,
+        status: "SENT",
         scheduled_at: nextScheduled,
         sent_at: new Date().toISOString(),
         assigned_inbox_id: inbox.id,
-        subject_template: nextSubject,
-        body_template: nextBody,
       });
     } else {
       // Completed or single-touch
       await updateLead(lead.id, {
         status: "SENT",
-        step: lead.step ? lead.step + 1 : 2,
         sent_at: new Date().toISOString(),
         assigned_inbox_id: inbox.id,
       });

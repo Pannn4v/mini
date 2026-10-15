@@ -408,11 +408,46 @@ export async function addLeads(leads: Array<Omit<Lead, "id" | "created_at" | "st
   return createdLeads;
 }
 
+const ALLOWED_SUPABASE_LEAD_COLS = new Set([
+  "id",
+  "campaign_id",
+  "recipient_email",
+  "recipient_name",
+  "company_name",
+  "city",
+  "subject_template",
+  "body_template",
+  "status",
+  "scheduled_at",
+  "sent_at",
+  "assigned_inbox_id",
+  "attempts",
+  "last_error",
+  "created_at",
+]);
+
+const ALLOWED_SUPABASE_STATUSES = new Set(["PENDING", "SENT", "FAILED"]);
+
 export async function updateLead(id: string, updates: Partial<Lead>): Promise<Lead | null> {
   if (supabase) {
     try {
-      const { data, error } = await supabase.from("leads").update(updates).eq("id", id).select().single();
+      const sanitized: Record<string, any> = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (ALLOWED_SUPABASE_LEAD_COLS.has(key)) {
+          if (key === "status") {
+            if (ALLOWED_SUPABASE_STATUSES.has(value as string)) {
+              sanitized.status = value;
+            } else if (value === "WAITING_FOLLOWUP" || value === "REPLIED") {
+              sanitized.status = "SENT";
+            }
+          } else {
+            sanitized[key] = value;
+          }
+        }
+      }
+      const { data, error } = await supabase.from("leads").update(sanitized).eq("id", id).select().single();
       if (!error && data) return data as Lead;
+      if (error) console.error("Supabase updateLead error:", error);
     } catch (e) {
       console.warn("Supabase updateLead fallback:", e);
     }
