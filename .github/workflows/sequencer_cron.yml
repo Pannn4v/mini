@@ -20,6 +20,15 @@ jobs:
     name: Knock Vercel Dispatcher
     runs-on: ubuntu-latest
     steps:
+      - name: Sync Inbox Replies via IMAP
+        run: |
+          SECRET="${{ secrets.CRON_SECRET || 'sovereign_sequencer_secret_123' }}"
+          SYNC_URL="https://mini-beryl-rho.vercel.app/api/cron/sync-replies"
+          echo "Syncing inbox replies from IMAP..."
+          curl -s -X POST "$SYNC_URL" \
+            -H "Authorization: Bearer $SECRET" \
+            -H "User-Agent: GitHub-Actions-Cron-Sequencer/1.0" || true
+
       - name: Ping Mini-Instantly Dispatch API
         run: |
           FORCE="${{ github.event.inputs.force || 'false' }}"
