@@ -136,6 +136,9 @@ export default function Dashboard() {
   // Outbound Logs Scoped Filter
   const [logsFilterMode, setLogsFilterMode] = useState<"current" | "all">("current");
 
+  // Campaigns Tab View Mode: "all" or "focused"
+  const [campaignViewMode, setCampaignViewMode] = useState<"all" | "focused">("all");
+
   // Florida Target Timezone Helpers
   const [floridaTime, setFloridaTime] = useState("");
   const [localTime, setLocalTime] = useState("");
@@ -593,8 +596,8 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-3">
           {/* Active Campaign Switcher Dropdown */}
-          <div className="flex items-center gap-2 border border-[#262626] bg-[#121212] px-2.5 py-1 rounded text-xs font-mono">
-            <span className="text-[#737373] text-[11px]">Campaign:</span>
+          <div className="flex items-center gap-2 border border-white/20 bg-[#121212] px-2.5 py-1 rounded text-xs font-mono">
+            <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.2 rounded uppercase">Focus Scope</span>
             <select
               value={selectedCampaignId}
               onChange={(e) => {
@@ -606,7 +609,7 @@ export default function Dashboard() {
                   } catch (err) {}
                 }
               }}
-              className="bg-transparent text-white text-xs font-mono focus:outline-none cursor-pointer pr-2"
+              className="bg-transparent text-white text-xs font-mono focus:outline-none cursor-pointer pr-2 font-medium"
             >
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id} className="bg-[#121212] text-white">
@@ -800,18 +803,18 @@ export default function Dashboard() {
               <button
                 onClick={exportToJson}
                 className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#262626] bg-[#0A0A0A] hover:bg-[#171717] text-white hover:border-[#404040] transition-all"
-                title="Export leads in current view as JSON"
+                title={`Export leads for ${activeCampaign ? activeCampaign.name : "all campaigns"} as JSON`}
               >
                 <Download className="h-3 w-3" />
-                Export JSON
+                Export JSON [{activeCampaign ? activeCampaign.name : "Active"}]
               </button>
               <button
                 onClick={exportToCsv}
                 className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#262626] bg-[#0A0A0A] hover:bg-[#171717] text-[#A3A3A3] hover:text-white hover:border-[#404040] transition-all"
-                title="Export leads in current view as CSV"
+                title={`Export leads for ${activeCampaign ? activeCampaign.name : "all campaigns"} as CSV`}
               >
                 <Download className="h-3 w-3" />
-                Export CSV
+                Export CSV [{activeCampaign ? activeCampaign.name : "Active"}]
               </button>
 
               {/* Seed Market Presets Dropdown */}
@@ -821,7 +824,7 @@ export default function Dashboard() {
                   className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#333333] bg-[#0A0A0A] hover:bg-[#1A1A1A] text-white transition-all"
                 >
                   <Plus className="h-3 w-3" />
-                  Seed Market
+                  Seed [{activeCampaign ? activeCampaign.name : "Market"}]
                   <ChevronDown className="h-3 w-3" />
                 </button>
 
@@ -855,11 +858,11 @@ export default function Dashboard() {
               {/* Custom JSON Upload */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#262626] bg-[#0A0A0A] text-[#A3A3A3] hover:text-white hover:border-[#404040] transition-all"
-                title="Upload external JSON file of leads"
+                className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981] hover:bg-[#10B981]/20 transition-all font-semibold"
+                title={`Upload external JSON file of leads directly into ${activeCampaign ? activeCampaign.name : "selected campaign"}`}
               >
                 <Upload className="h-3 w-3" />
-                Upload JSON
+                Upload JSON to [{activeCampaign ? activeCampaign.name : "Campaign"}]
               </button>
               <input
                 type="file"
@@ -872,8 +875,9 @@ export default function Dashboard() {
               <button
                 onClick={handleClearCurrentQueue}
                 className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border border-[#262626] text-[#737373] hover:text-white hover:border-[#404040] transition-all"
+                title={`Clear all leads in ${activeCampaign ? activeCampaign.name : "current queue"}`}
               >
-                Clear Queue
+                Clear [{activeCampaign ? activeCampaign.name : "Queue"}]
               </button>
             </div>
           )}
@@ -892,13 +896,64 @@ export default function Dashboard() {
         {/* TAB 1: CAMPAIGNS GRID (Instantly Standard) */}
         {activeTab === "campaigns" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs font-mono text-[#737373]">
-              <span>ACTIVE OUTBOUND CAMPAIGNS ({campaigns.length})</span>
-              <span>Click a campaign to manage leads and sequences</span>
+            {/* View Mode Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#0A0A0A] border border-[#262626] rounded-lg p-3 font-mono text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#737373] uppercase tracking-wider mr-1">View Mode:</span>
+                <button
+                  type="button"
+                  onClick={() => setCampaignViewMode("all")}
+                  className={`px-3 py-1 rounded transition-all flex items-center gap-1.5 ${
+                    campaignViewMode === "all"
+                      ? "bg-white text-black font-semibold shadow"
+                      : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#262626]"
+                  }`}
+                >
+                  <span>All Campaigns</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded ${campaignViewMode === "all" ? "bg-black/10 text-black font-bold" : "bg-[#262626] text-[#737373]"}`}>
+                    {campaigns.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCampaignViewMode("focused")}
+                  className={`px-3 py-1 rounded transition-all flex items-center gap-1.5 ${
+                    campaignViewMode === "focused"
+                      ? "bg-white text-black font-semibold shadow"
+                      : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#262626]"
+                  }`}
+                >
+                  <span>🎯 Focus Scope</span>
+                  {activeCampaign && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded truncate max-w-[150px] ${campaignViewMode === "focused" ? "bg-black/10 text-black font-bold" : "bg-[#262626] text-white"}`}>
+                      {activeCampaign.name}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {campaignViewMode === "focused" && activeCampaign ? (
+                <div className="flex items-center gap-2 text-[#A3A3A3]">
+                  <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
+                  <span>Isolating: <strong className="text-white">{activeCampaign.name}</strong></span>
+                  <button
+                    onClick={() => setCampaignViewMode("all")}
+                    className="text-[11px] text-[#737373] hover:text-white underline ml-1 cursor-pointer"
+                  >
+                    (Show All)
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[#737373] text-[11px]">Click a campaign card to select or isolate it</span>
+              )}
             </div>
 
+            {/* Campaign Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {campaigns.map((camp) => {
+              {(campaignViewMode === "focused" && activeCampaign
+                ? campaigns.filter((c) => c.id === activeCampaign.id)
+                : campaigns
+              ).map((camp) => {
                 const campLeads = allLeads.filter((l) => l.campaign_id === camp.id);
                 const cSent = campLeads.filter((l) => l.status === "SENT").length;
                 const cTotal = campLeads.length;
@@ -907,15 +962,34 @@ export default function Dashboard() {
                 return (
                   <div
                     key={camp.id}
-                    className={`bg-[#0A0A0A] border rounded-lg p-5 flex flex-col justify-between transition-all ${
-                      isSelected ? "border-white/40 ring-1 ring-white/20" : "border-[#262626] hover:border-[#383838]"
+                    onClick={() => {
+                      if (!isSelected) {
+                        setSelectedCampaignId(camp.id);
+                        if (typeof window !== "undefined") {
+                          try {
+                            localStorage.setItem("mini_instantly_selected_campaign", camp.id);
+                          } catch (e) {}
+                        }
+                      }
+                    }}
+                    className={`bg-[#0A0A0A] border rounded-lg p-5 flex flex-col justify-between transition-all cursor-pointer relative ${
+                      isSelected
+                        ? "border-white ring-2 ring-white/20 bg-[#111111]"
+                        : "border-[#262626] hover:border-[#404040] hover:bg-[#0D0D0D]"
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-semibold text-white font-mono">{camp.name}</h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-semibold text-white font-mono flex items-center gap-2">
+                              {camp.name}
+                            </h3>
+                            {isSelected && (
+                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-white text-black uppercase tracking-wider">
+                                ✓ ACTIVE FOCUS
+                              </span>
+                            )}
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#262626] bg-[#121212] text-[#A3A3A3]">
                               {camp.market_category}
                             </span>
@@ -926,16 +1000,21 @@ export default function Dashboard() {
                         </div>
 
                         {/* Status Toggle */}
-                        <button
-                          onClick={() => toggleCampaignStatus(camp.id, camp.status)}
-                          className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
-                            camp.status === "ACTIVE"
-                              ? "bg-[#171717] border-[#404040] text-white"
-                              : "bg-black border-[#262626] text-[#737373]"
-                          }`}
-                        >
-                          {camp.status === "ACTIVE" ? "● Active" : "○ Paused"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCampaignStatus(camp.id, camp.status);
+                            }}
+                            className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                              camp.status === "ACTIVE"
+                                ? "bg-[#171717] border-[#404040] text-white"
+                                : "bg-black border-[#262626] text-[#737373]"
+                            }`}
+                          >
+                            {camp.status === "ACTIVE" ? "● Active" : "○ Paused"}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Lead Stats for this campaign */}
@@ -963,10 +1042,40 @@ export default function Dashboard() {
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="mt-5 pt-3 border-t border-[#1C1C1C] flex items-center justify-between">
-                      <div className="flex gap-2">
+                    <div className="mt-5 pt-3 border-t border-[#1C1C1C] flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Focus Mode Toggle Button */}
                         <button
-                          onClick={() => {
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCampaignId(camp.id);
+                            if (typeof window !== "undefined") {
+                              try {
+                                localStorage.setItem("mini_instantly_selected_campaign", camp.id);
+                              } catch (err) {}
+                            }
+                            if (campaignViewMode === "focused" && isSelected) {
+                              setCampaignViewMode("all");
+                            } else {
+                              setCampaignViewMode("focused");
+                            }
+                          }}
+                          className={`text-xs font-mono px-2.5 py-1 rounded border transition-all flex items-center gap-1 font-semibold ${
+                            isSelected && campaignViewMode === "focused"
+                              ? "bg-white text-black border-white"
+                              : isSelected
+                              ? "bg-[#262626] text-white border-[#555]"
+                              : "bg-[#141414] text-[#A3A3A3] hover:text-white border-[#262626]"
+                          }`}
+                        >
+                          {isSelected && campaignViewMode === "focused" ? "↩ Show All" : "🎯 Focus Mode"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setSelectedCampaignId(camp.id);
                             if (typeof window !== "undefined") {
                               try {
@@ -977,10 +1086,13 @@ export default function Dashboard() {
                           }}
                           className="text-xs font-mono px-2.5 py-1 rounded bg-[#171717] hover:bg-[#262626] text-white border border-[#333333] transition-colors"
                         >
-                          View Leads Queue
+                          Leads Queue ({cTotal})
                         </button>
+
                         <button
-                          onClick={() => {
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setSelectedCampaignId(camp.id);
                             if (typeof window !== "undefined") {
                               try {
@@ -996,7 +1108,11 @@ export default function Dashboard() {
                       </div>
 
                       <button
-                        onClick={() => handleDeleteCampaign(camp.id)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCampaign(camp.id);
+                        }}
                         className="text-[#555] hover:text-[#EF4444] transition-colors p-1"
                         title="Delete campaign"
                       >
@@ -1013,15 +1129,54 @@ export default function Dashboard() {
         {/* TAB 2: LEADS QUEUE */}
         {activeTab === "queue" && (
           <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg overflow-hidden">
-            <div className="p-3 bg-[#121212] border-b border-[#262626] flex items-center justify-between text-xs font-mono">
-              <div className="flex items-center gap-2">
-                <span className="text-[#737373]">Viewing Queue:</span>
-                <span className="font-semibold text-white">
-                  {activeCampaign ? activeCampaign.name : "All Campaigns"}
-                </span>
-                <span className="text-[10px] text-[#A3A3A3] px-1.5 py-0.2 rounded border border-[#262626]">
-                  {currentLeads.length} Leads
-                </span>
+            {/* Prominent Context Scope Banner */}
+            <div className="p-4 bg-[#0F0F0F] border-b border-[#262626] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded bg-white text-black font-bold flex items-center justify-center shrink-0">
+                  🎯
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                      ACTIVE QUEUE SCOPE
+                    </span>
+                    <span className="font-bold text-sm text-white">
+                      {activeCampaign ? activeCampaign.name : "All Campaigns"}
+                    </span>
+                    {activeCampaign && (
+                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-[#333333] bg-[#171717]">
+                        {activeCampaign.market_category}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#737373] mt-0.5">
+                    Showing <strong className="text-white">{currentLeads.length}</strong> leads for this scope. All JSON uploads, exports, seeds, and dispatches apply strictly to this campaign.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Scope Switcher inside Queue */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[#737373] text-[11px]">Scope:</span>
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedCampaignId(newId);
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("mini_instantly_selected_campaign", newId);
+                      } catch (err) {}
+                    }
+                  }}
+                  className="bg-[#171717] border border-[#333333] text-white text-xs font-mono rounded px-2.5 py-1 focus:outline-none cursor-pointer"
+                >
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#121212] text-white">
+                      {c.name} ({allLeads.filter(l => l.campaign_id === c.id).length} leads)
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1108,19 +1263,70 @@ export default function Dashboard() {
         {/* TAB 3: SEQUENCES & COPY */}
         {activeTab === "sequences" && (
           <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-6 space-y-6 font-mono">
+            {/* Sequence Scope Banner */}
+            <div className="p-4 bg-[#0F0F0F] border border-[#262626] rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded bg-white text-black font-bold flex items-center justify-center shrink-0">
+                  ✍️
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                      SEQUENCE SCOPE
+                    </span>
+                    <span className="font-bold text-sm text-white">
+                      {activeCampaign ? activeCampaign.name : "Default"}
+                    </span>
+                    {activeCampaign && (
+                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-[#333333] bg-[#171717]">
+                        {activeCampaign.market_category}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#737373] mt-0.5">
+                    Sequence and spintax templates edited below apply strictly to leads assigned to <strong className="text-white">{activeCampaign?.name}</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Switcher dropdown in Sequences */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[#737373] text-[11px]">Edit For:</span>
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedCampaignId(newId);
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("mini_instantly_selected_campaign", newId);
+                      } catch (err) {}
+                    }
+                  }}
+                  className="bg-[#171717] border border-[#333333] text-white text-xs font-mono rounded px-2.5 py-1 focus:outline-none cursor-pointer"
+                >
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-[#121212] text-white">
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between border-b border-[#262626] pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-white uppercase">
                   Email Sequence & Spintax Template
                 </h3>
                 <p className="text-xs text-[#737373] mt-0.5">
-                  Custom copy for: <span className="text-white">{activeCampaign?.name}</span>
+                  Target Market: <span className="text-white">{activeCampaign?.market_category || "General"}</span>
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 {seqSavedMessage && (
-                  <span className="text-xs text-[#4ADE80]">✓ Saved to Campaign</span>
+                  <span className="text-xs text-[#4ADE80] font-bold">✓ Saved to {activeCampaign?.name}</span>
                 )}
                 <button
                   onClick={handleSaveSequence}
