@@ -572,11 +572,11 @@ export default function Dashboard() {
   const nextDue = currentLeads.find((l) => l.status === "PENDING");
 
   return (
-    <div className="min-h-screen bg-black text-[#EDEDED] flex flex-col font-sans">
+    <div className="min-h-screen bg-black text-[#EDEDED] flex flex-col font-sans selection:bg-white selection:text-black antialiased">
       {/* Top Monochrome Bar */}
-      <header className="border-b border-[#262626] bg-[#0A0A0A] px-6 py-3.5 flex items-center justify-between">
+      <header className="border-b border-white/[0.08] bg-[#0A0A0A]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className="h-7 w-7 rounded-md bg-white text-black flex items-center justify-center font-bold font-mono text-sm">
+          <div className="h-7 w-7 rounded-md bg-white text-black flex items-center justify-center font-bold font-mono text-sm shadow-[0_0_14px_rgba(255,255,255,0.25)]">
             S
           </div>
           <div>
@@ -584,7 +584,7 @@ export default function Dashboard() {
               <h1 className="text-sm font-semibold tracking-tight text-white uppercase font-mono">
                 SOVEREIGN SEQUENCER
               </h1>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border border-[#333333] text-[#A3A3A3]">
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border border-white/[0.12] text-[#A3A3A3] bg-white/[0.02]">
                 Mini-Instantly · Multi-Campaign
               </span>
             </div>
@@ -596,7 +596,7 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-3">
           {/* Active Campaign Switcher Dropdown */}
-          <div className="flex items-center gap-2 border border-white/20 bg-[#121212] px-2.5 py-1 rounded text-xs font-mono">
+          <div className="flex items-center gap-2 border border-white/20 bg-[#121212] px-2.5 py-1 rounded text-xs font-mono shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
             <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.2 rounded uppercase">Focus Scope</span>
             <select
               value={selectedCampaignId}
@@ -625,13 +625,13 @@ export default function Dashboard() {
               onClick={() => toggleCampaignStatus(activeCampaign.id, activeCampaign.status)}
               className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded border transition-all ${
                 activeCampaign.status === "ACTIVE"
-                  ? "bg-[#171717] border-[#404040] text-white hover:bg-[#262626]"
-                  : "bg-black border-[#262626] text-[#737373] hover:text-white"
+                  ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-400 hover:bg-emerald-950/50 shadow-[0_0_10px_rgba(52,211,153,0.15)]"
+                  : "bg-black border-white/[0.08] text-[#737373] hover:text-white"
               }`}
             >
               {activeCampaign.status === "ACTIVE" ? (
                 <>
-                  <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
                   Active
                 </>
               ) : (
@@ -647,7 +647,7 @@ export default function Dashboard() {
           <button
             onClick={() => triggerDispatch(true)}
             disabled={loading}
-            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded bg-white text-black font-semibold hover:bg-[#D4D4D4] transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded bg-white text-black font-semibold hover:bg-[#E5E5E5] transition-all disabled:opacity-50 shadow-[0_0_12px_rgba(255,255,255,0.15)]"
             title="Force immediate dispatch of 1 lead without waiting for cron tick"
           >
             <Zap className="h-3 w-3 fill-black" />
@@ -672,56 +672,68 @@ export default function Dashboard() {
         
         {/* Metric Cards Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/[0.18] transition-all">
             <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider flex items-center justify-between">
               <span>Queue Progress</span>
-              <span className="text-[10px] text-white font-mono">{activeCampaign?.market_category || "GLOBAL"}</span>
+              <span className="text-[10px] text-white font-mono px-1.5 py-0.5 rounded border border-white/[0.08] bg-white/[0.02]">
+                {activeCampaign?.market_category || "GLOBAL"}
+              </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-white">{sentCount}</span>
-              <span className="text-xs text-[#737373] font-mono">/ {totalLeads} total</span>
+              <span className="text-2xl font-bold font-mono text-white tabular-nums tracking-tight">{sentCount}</span>
+              <span className="text-xs text-[#737373] font-mono tabular-nums">/ {totalLeads} total</span>
             </div>
-            <div className="mt-3 w-full bg-[#1A1A1A] h-1.5 rounded-full overflow-hidden">
+            <div className="mt-3 w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
               <div 
-                className="bg-white h-full transition-all duration-500" 
+                className="bg-white h-full transition-all duration-500 shadow-[0_0_8px_rgba(255,255,255,0.4)]" 
                 style={{ width: `${totalLeads > 0 ? (sentCount / totalLeads) * 100 : 0}%` }} 
               />
             </div>
           </div>
 
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/[0.18] transition-all">
             <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider">Inboxes Pool</div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-white">{activeInboxes}</span>
+              <span className="text-2xl font-bold font-mono text-white tabular-nums tracking-tight">{activeInboxes}</span>
               <span className="text-xs text-[#737373] font-mono">connected</span>
             </div>
-            <div className="mt-2 text-[11px] font-mono text-[#737373]">
+            <div className="mt-2 text-[11px] font-mono text-[#737373] tabular-nums">
               Sent today: <strong className="text-white">{totalSentToday}</strong> / {totalDailyCapacity} cap
             </div>
           </div>
 
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/[0.18] transition-all">
             <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider">Next Due Target</div>
             <div className="mt-2 text-sm font-semibold text-white truncate font-mono">
               {nextDue ? nextDue.recipient_email : "Queue Empty"}
             </div>
-            <div className="mt-1 text-[11px] text-[#737373] font-mono">
+            <div className="mt-1 text-[11px] text-[#737373] font-mono tabular-nums">
               {nextDue ? new Date(nextDue.scheduled_at).toLocaleTimeString() : "Standby"}
             </div>
           </div>
 
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/[0.18] transition-all">
             <div className="text-[11px] font-mono text-[#737373] uppercase tracking-wider flex items-center justify-between">
               <span>Target Schedule (EST)</span>
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1.5 ${
                 isFloridaWindowActive() 
-                  ? "bg-[#064e3b] text-[#34d399] border-[#047857]" 
-                  : "bg-[#18181b] text-[#a1a1aa] border-[#27272a]"
+                  ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(52,211,153,0.25)]" 
+                  : "bg-neutral-900 text-neutral-400 border-white/[0.08]"
               }`}>
-                {isFloridaWindowActive() ? "● Window Open" : "○ Outside Window (Sleep)"}
+                {isFloridaWindowActive() ? (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                    Window Open
+                  </>
+                ) : (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-neutral-600" />
+                    Outside Window (Sleep)
+                  </>
+                )}
               </span>
             </div>
-            <div className="mt-2 text-sm font-bold text-white font-mono flex items-baseline gap-2">
+            <div className="mt-2 text-sm font-bold text-white font-mono flex items-baseline gap-2 tabular-nums">
               <span>{floridaTime || "EST"}</span>
               <span className="text-[11px] font-normal text-[#737373]">(Local: {localTime})</span>
             </div>
@@ -733,14 +745,14 @@ export default function Dashboard() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center justify-between border-b border-[#262626] pb-3">
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab("campaigns")}
               className={`px-3 py-1.5 text-xs font-mono rounded transition-all ${
                 activeTab === "campaigns"
-                  ? "bg-[#171717] text-white border border-[#404040]"
-                  : "text-[#737373] hover:text-white"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Campaigns ({campaigns.length})
@@ -749,8 +761,8 @@ export default function Dashboard() {
               onClick={() => setActiveTab("queue")}
               className={`px-3 py-1.5 text-xs font-mono rounded transition-all ${
                 activeTab === "queue"
-                  ? "bg-[#171717] text-white border border-[#404040]"
-                  : "text-[#737373] hover:text-white"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Leads Queue ({currentLeads.length})
@@ -759,8 +771,8 @@ export default function Dashboard() {
               onClick={() => setActiveTab("sequences")}
               className={`px-3 py-1.5 text-xs font-mono rounded transition-all ${
                 activeTab === "sequences"
-                  ? "bg-[#171717] text-white border border-[#404040]"
-                  : "text-[#737373] hover:text-white"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Sequence & Copy
@@ -769,8 +781,8 @@ export default function Dashboard() {
               onClick={() => setActiveTab("inboxes")}
               className={`px-3 py-1.5 text-xs font-mono rounded transition-all ${
                 activeTab === "inboxes"
-                  ? "bg-[#171717] text-white border border-[#404040]"
-                  : "text-[#737373] hover:text-white"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Inboxes Pool ({inboxes.length})
@@ -779,8 +791,8 @@ export default function Dashboard() {
               onClick={() => setActiveTab("logs")}
               className={`px-3 py-1.5 text-xs font-mono rounded transition-all ${
                 activeTab === "logs"
-                  ? "bg-[#171717] text-white border border-[#404040]"
-                  : "text-[#737373] hover:text-white"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Outbound Logs ({logs.length})
@@ -897,7 +909,7 @@ export default function Dashboard() {
         {activeTab === "campaigns" && (
           <div className="space-y-4">
             {/* View Mode Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#0A0A0A] border border-[#262626] rounded-lg p-3 font-mono text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-3 font-mono text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#737373] uppercase tracking-wider mr-1">View Mode:</span>
                 <button
@@ -905,12 +917,12 @@ export default function Dashboard() {
                   onClick={() => setCampaignViewMode("all")}
                   className={`px-3 py-1 rounded transition-all flex items-center gap-1.5 ${
                     campaignViewMode === "all"
-                      ? "bg-white text-black font-semibold shadow"
-                      : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#262626]"
+                      ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)]"
+                      : "bg-white/[0.03] text-[#888888] hover:text-white border border-white/[0.08]"
                   }`}
                 >
                   <span>All Campaigns</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded ${campaignViewMode === "all" ? "bg-black/10 text-black font-bold" : "bg-[#262626] text-[#737373]"}`}>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded ${campaignViewMode === "all" ? "bg-black/10 text-black font-bold" : "bg-white/[0.08] text-[#737373]"}`}>
                     {campaigns.length}
                   </span>
                 </button>
@@ -919,13 +931,13 @@ export default function Dashboard() {
                   onClick={() => setCampaignViewMode("focused")}
                   className={`px-3 py-1 rounded transition-all flex items-center gap-1.5 ${
                     campaignViewMode === "focused"
-                      ? "bg-white text-black font-semibold shadow"
-                      : "bg-[#141414] text-[#A3A3A3] hover:text-white border border-[#262626]"
+                      ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)]"
+                      : "bg-white/[0.03] text-[#888888] hover:text-white border border-white/[0.08]"
                   }`}
                 >
                   <span>🎯 Focus Scope</span>
                   {activeCampaign && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded truncate max-w-[150px] ${campaignViewMode === "focused" ? "bg-black/10 text-black font-bold" : "bg-[#262626] text-white"}`}>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded truncate max-w-[150px] ${campaignViewMode === "focused" ? "bg-black/10 text-black font-bold" : "bg-white/[0.08] text-white"}`}>
                       {activeCampaign.name}
                     </span>
                   )}
@@ -934,7 +946,7 @@ export default function Dashboard() {
 
               {campaignViewMode === "focused" && activeCampaign ? (
                 <div className="flex items-center gap-2 text-[#A3A3A3]">
-                  <span className="h-2 w-2 rounded-full bg-[#10B981] animate-pulse" />
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                   <span>Isolating: <strong className="text-white">{activeCampaign.name}</strong></span>
                   <button
                     onClick={() => setCampaignViewMode("all")}
@@ -972,10 +984,10 @@ export default function Dashboard() {
                         }
                       }
                     }}
-                    className={`bg-[#0A0A0A] border rounded-lg p-5 flex flex-col justify-between transition-all cursor-pointer relative ${
+                    className={`rounded-xl p-5 flex flex-col justify-between transition-all cursor-pointer relative ${
                       isSelected
-                        ? "border-white ring-2 ring-white/20 bg-[#111111]"
-                        : "border-[#262626] hover:border-[#404040] hover:bg-[#0D0D0D]"
+                        ? "border border-white/80 ring-1 ring-white/30 bg-[#0E0E0E] shadow-[0_0_24px_rgba(255,255,255,0.03),inset_0_1px_0_0_rgba(255,255,255,0.12)]"
+                        : "border border-white/[0.08] hover:border-white/[0.18] bg-[#0A0A0A] hover:bg-[#0D0D0D] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]"
                     }`}
                   >
                     <div>
@@ -986,11 +998,11 @@ export default function Dashboard() {
                               {camp.name}
                             </h3>
                             {isSelected && (
-                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-white text-black uppercase tracking-wider">
+                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-white text-black uppercase tracking-wider shadow-[0_0_8px_rgba(255,255,255,0.2)]">
                                 ✓ ACTIVE FOCUS
                               </span>
                             )}
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#262626] bg-[#121212] text-[#A3A3A3]">
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-white/[0.08] bg-white/[0.02] text-[#A3A3A3]">
                               {camp.market_category}
                             </span>
                           </div>
@@ -1008,8 +1020,8 @@ export default function Dashboard() {
                             }}
                             className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors ${
                               camp.status === "ACTIVE"
-                                ? "bg-[#171717] border-[#404040] text-white"
-                                : "bg-black border-[#262626] text-[#737373]"
+                                ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.2)]"
+                                : "bg-black border-white/[0.08] text-[#737373] hover:text-white"
                             }`}
                           >
                             {camp.status === "ACTIVE" ? "● Active" : "○ Paused"}
@@ -1018,7 +1030,7 @@ export default function Dashboard() {
                       </div>
 
                       {/* Lead Stats for this campaign */}
-                      <div className="mt-4 grid grid-cols-3 gap-2 bg-[#121212] border border-[#1F1F1F] rounded p-2.5 text-center font-mono text-xs">
+                      <div className="mt-4 grid grid-cols-3 gap-2 bg-black/60 border border-white/[0.06] rounded-lg p-2.5 text-center font-mono text-xs tabular-nums">
                         <div>
                           <div className="text-[10px] text-[#737373] uppercase">Total</div>
                           <div className="text-sm font-semibold text-white">{cTotal}</div>
@@ -1033,16 +1045,16 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      <div className="mt-3 w-full bg-[#1A1A1A] h-1.5 rounded-full overflow-hidden">
+                      <div className="mt-3 w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
                         <div 
-                          className="bg-white h-full transition-all duration-300"
+                          className="bg-white h-full transition-all duration-300 shadow-[0_0_6px_rgba(255,255,255,0.3)]"
                           style={{ width: `${cTotal > 0 ? (cSent / cTotal) * 100 : 0}%` }}
                         />
                       </div>
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="mt-5 pt-3 border-t border-[#1C1C1C] flex flex-wrap items-center justify-between gap-2">
+                    <div className="mt-5 pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Focus Mode Toggle Button */}
                         <button
@@ -1063,10 +1075,10 @@ export default function Dashboard() {
                           }}
                           className={`text-xs font-mono px-2.5 py-1 rounded border transition-all flex items-center gap-1 font-semibold ${
                             isSelected && campaignViewMode === "focused"
-                              ? "bg-white text-black border-white"
+                              ? "bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.15)]"
                               : isSelected
-                              ? "bg-[#262626] text-white border-[#555]"
-                              : "bg-[#141414] text-[#A3A3A3] hover:text-white border-[#262626]"
+                              ? "bg-white/[0.1] text-white border-white/40"
+                              : "bg-white/[0.03] text-[#A3A3A3] hover:text-white border-white/[0.08]"
                           }`}
                         >
                           {isSelected && campaignViewMode === "focused" ? "↩ Show All" : "🎯 Focus Mode"}
@@ -1084,7 +1096,7 @@ export default function Dashboard() {
                             }
                             setActiveTab("queue");
                           }}
-                          className="text-xs font-mono px-2.5 py-1 rounded bg-[#171717] hover:bg-[#262626] text-white border border-[#333333] transition-colors"
+                          className="text-xs font-mono px-2.5 py-1 rounded bg-white/[0.05] hover:bg-white/[0.1] text-white border border-white/[0.12] transition-colors"
                         >
                           Leads Queue ({cTotal})
                         </button>
@@ -1101,7 +1113,7 @@ export default function Dashboard() {
                             }
                             setActiveTab("sequences");
                           }}
-                          className="text-xs font-mono px-2.5 py-1 rounded bg-black hover:bg-[#121212] text-[#A3A3A3] hover:text-white border border-[#262626] transition-colors"
+                          className="text-xs font-mono px-2.5 py-1 rounded bg-black hover:bg-white/[0.05] text-[#A3A3A3] hover:text-white border border-white/[0.08] transition-colors"
                         >
                           Sequence
                         </button>
@@ -1128,29 +1140,29 @@ export default function Dashboard() {
 
         {/* TAB 2: LEADS QUEUE */}
         {activeTab === "queue" && (
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg overflow-hidden">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
             {/* Prominent Context Scope Banner */}
-            <div className="p-4 bg-[#0F0F0F] border-b border-[#262626] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-mono">
+            <div className="p-4 bg-[#0F0F0F] border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-mono shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded bg-white text-black font-bold flex items-center justify-center shrink-0">
+                <div className="h-8 w-8 rounded-lg bg-white text-black font-bold flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,255,255,0.2)]">
                   🎯
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-[0_0_8px_rgba(255,255,255,0.2)]">
                       ACTIVE QUEUE SCOPE
                     </span>
                     <span className="font-bold text-sm text-white">
                       {activeCampaign ? activeCampaign.name : "All Campaigns"}
                     </span>
                     {activeCampaign && (
-                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-[#333333] bg-[#171717]">
+                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.02]">
                         {activeCampaign.market_category}
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] text-[#737373] mt-0.5">
-                    Showing <strong className="text-white">{currentLeads.length}</strong> leads for this scope. All JSON uploads, exports, seeds, and dispatches apply strictly to this campaign.
+                    Showing <strong className="text-white tabular-nums">{currentLeads.length}</strong> leads for this scope. All JSON uploads, exports, seeds, and dispatches apply strictly to this campaign.
                   </p>
                 </div>
               </div>
@@ -1169,7 +1181,7 @@ export default function Dashboard() {
                       } catch (err) {}
                     }
                   }}
-                  className="bg-[#171717] border border-[#333333] text-white text-xs font-mono rounded px-2.5 py-1 focus:outline-none cursor-pointer"
+                  className="bg-[#171717] border border-white/[0.12] text-white text-xs font-mono rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer"
                 >
                   {campaigns.map((c) => (
                     <option key={c.id} value={c.id} className="bg-[#121212] text-white">
@@ -1182,7 +1194,7 @@ export default function Dashboard() {
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-[#0F0F0F] border-b border-[#262626] text-[#737373] uppercase">
+                <thead className="bg-[#0C0C0C] border-b border-white/[0.08] text-[#737373] uppercase tracking-wider text-[11px]">
                   <tr>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Recipient</th>
@@ -1192,7 +1204,7 @@ export default function Dashboard() {
                     <th className="py-3 px-4 text-right">Preview Copy</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1F1F1F]">
+                <tbody className="divide-y divide-white/[0.04]">
                   {currentLeads.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-12 text-center text-[#737373]">
@@ -1204,16 +1216,16 @@ export default function Dashboard() {
                       <tr 
                         key={lead.id} 
                         onClick={() => setInspectingLead(lead)}
-                        className="hover:bg-[#171717] transition-colors cursor-pointer group"
+                        className="hover:bg-white/[0.03] transition-colors cursor-pointer group tabular-nums"
                         title="Click to inspect email copy & preview"
                       >
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
                             lead.status === "SENT"
-                              ? "bg-[#171717] text-white border border-[#333333]"
+                              ? "bg-white/[0.08] text-white border border-white/20"
                               : lead.status === "FAILED"
-                              ? "bg-[#1F1212] text-[#F87171] border border-[#3F1A1A]"
-                              : "bg-[#0F172A] text-[#93C5FD] border border-[#1E293B]"
+                              ? "bg-rose-950/40 text-rose-400 border border-rose-500/30"
+                              : "bg-sky-950/40 text-sky-400 border border-sky-500/30"
                           }`}>
                             {lead.status === "SENT" ? "✓ Sent" : lead.status}
                           </span>
@@ -1262,23 +1274,23 @@ export default function Dashboard() {
 
         {/* TAB 3: SEQUENCES & COPY */}
         {activeTab === "sequences" && (
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-6 space-y-6 font-mono">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-6 space-y-6 font-mono shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
             {/* Sequence Scope Banner */}
-            <div className="p-4 bg-[#0F0F0F] border border-[#262626] rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+            <div className="p-4 bg-[#0F0F0F] border border-white/[0.08] rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded bg-white text-black font-bold flex items-center justify-center shrink-0">
+                <div className="h-8 w-8 rounded-lg bg-white text-black font-bold flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(255,255,255,0.2)]">
                   ✍️
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    <span className="text-[10px] bg-white text-black font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-[0_0_8px_rgba(255,255,255,0.2)]">
                       SEQUENCE SCOPE
                     </span>
                     <span className="font-bold text-sm text-white">
                       {activeCampaign ? activeCampaign.name : "Default"}
                     </span>
                     {activeCampaign && (
-                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-[#333333] bg-[#171717]">
+                      <span className="text-[10px] text-[#A3A3A3] px-2 py-0.5 rounded border border-white/[0.08] bg-white/[0.02]">
                         {activeCampaign.market_category}
                       </span>
                     )}
@@ -1303,7 +1315,7 @@ export default function Dashboard() {
                       } catch (err) {}
                     }
                   }}
-                  className="bg-[#171717] border border-[#333333] text-white text-xs font-mono rounded px-2.5 py-1 focus:outline-none cursor-pointer"
+                  className="bg-[#171717] border border-white/[0.12] text-white text-xs font-mono rounded-lg px-2.5 py-1 focus:outline-none cursor-pointer"
                 >
                   {campaigns.map((c) => (
                     <option key={c.id} value={c.id} className="bg-[#121212] text-white">
@@ -1314,7 +1326,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-b border-[#262626] pb-3">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-white uppercase">
                   Email Sequence & Spintax Template
@@ -1326,12 +1338,12 @@ export default function Dashboard() {
 
               <div className="flex items-center gap-2">
                 {seqSavedMessage && (
-                  <span className="text-xs text-[#4ADE80] font-bold">✓ Saved to {activeCampaign?.name}</span>
+                  <span className="text-xs text-emerald-400 font-bold shadow-[0_0_8px_rgba(52,211,153,0.3)]">✓ Saved to {activeCampaign?.name}</span>
                 )}
                 <button
                   onClick={handleSaveSequence}
                   disabled={loading}
-                  className="px-3 py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-[#D4D4D4] transition-all"
+                  className="px-3 py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-[#E5E5E5] transition-all shadow-[0_0_10px_rgba(255,255,255,0.15)]"
                 >
                   Save Sequence
                 </button>
@@ -1389,7 +1401,7 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {inboxes.map((inbox) => (
-                <div key={inbox.id} className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4 flex flex-col justify-between">
+                <div key={inbox.id} className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-4 flex flex-col justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/[0.16] transition-all">
                   <div>
                     <div className="flex items-center justify-between">
                       <div className="text-xs font-semibold text-white font-mono truncate mr-2">{inbox.email}</div>
@@ -1399,8 +1411,8 @@ export default function Dashboard() {
                         title="Click to toggle Active / Rest (Paused) like Instantly"
                         className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer font-bold shrink-0 ${
                           inbox.status === "ACTIVE"
-                            ? "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/20"
-                            : "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30 hover:bg-[#F59E0B]/20"
+                            ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/30 shadow-[0_0_8px_rgba(52,211,153,0.2)]"
+                            : "bg-amber-950/40 text-amber-400 border-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
                         }`}
                       >
                         ● {inbox.status}
@@ -1409,25 +1421,25 @@ export default function Dashboard() {
                     <div className="text-[11px] text-[#737373] font-mono mt-1">Sender: {inbox.display_name}</div>
                     
                     <div className="mt-3 text-xs font-mono text-[#A3A3A3]">
-                      Sent today: <strong className="text-white">{inbox.sent_today}</strong> / {inbox.daily_limit} max
+                      Sent today: <strong className="text-white tabular-nums">{inbox.sent_today}</strong> / {inbox.daily_limit} max
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-[#1C1C1C] flex items-center justify-between text-[11px] font-mono">
+                  <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono">
                     <button
                       type="button"
                       onClick={() => handleToggleInboxStatus(inbox.id, inbox.status)}
                       className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
                         inbox.status === "ACTIVE"
-                          ? "bg-[#262626] text-[#F59E0B] hover:bg-[#333] border border-[#404040]"
-                          : "bg-[#10B981]/20 text-[#10B981] hover:bg-[#10B981]/30 border border-[#10B981]/40"
+                          ? "bg-white/[0.04] text-amber-400 hover:bg-white/[0.08] border border-amber-500/30"
+                          : "bg-emerald-950/30 text-emerald-400 hover:bg-emerald-950/50 border border-emerald-500/40"
                       }`}
                     >
                       {inbox.status === "ACTIVE" ? "⏸ Rest Inbox" : "▶ Resume Sending"}
                     </button>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-[#555] text-[10px]">
+                      <span className="text-[#555] text-[10px] tabular-nums">
                         {inbox.last_sent_at && inbox.last_sent_at !== "1970-01-01T00:00:00.000Z"
                           ? `${new Date(inbox.last_sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                           : "Ready"}
@@ -1450,7 +1462,7 @@ export default function Dashboard() {
 
         {/* TAB 5: OUTBOUND LOGS */}
         {activeTab === "logs" && (
-          <div className="bg-[#0A0A0A] border border-[#262626] rounded-lg overflow-hidden">
+          <div className="bg-[#0A0A0A] border border-white/[0.08] rounded-xl overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
             {/* Scoped Logs Header */}
             <div className="p-3 bg-[#121212] border-b border-[#262626] flex items-center justify-between text-xs font-mono">
               <div className="flex items-center gap-2">
