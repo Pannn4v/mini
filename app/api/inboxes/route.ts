@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInboxes, addInbox, deleteInbox } from "@/lib/db";
+import { getInboxes, addInbox, updateInbox, deleteInbox } from "@/lib/db";
 import { verifyInboxConnection } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +45,23 @@ export async function POST(req: Request) {
   }
 }
 
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, status, daily_limit } = body;
+    if (!id) return NextResponse.json({ error: "Missing ID" }, { status: 400 });
+
+    const updates: any = {};
+    if (status !== undefined) updates.status = status;
+    if (daily_limit !== undefined) updates.daily_limit = Number(daily_limit);
+
+    const updated = await updateInbox(id, updates);
+    return NextResponse.json({ success: true, inbox: updated });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
@@ -53,3 +70,4 @@ export async function DELETE(req: Request) {
   const success = await deleteInbox(id);
   return NextResponse.json({ success });
 }
+

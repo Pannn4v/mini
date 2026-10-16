@@ -547,6 +547,17 @@ export default function Dashboard() {
     fetchData();
   };
 
+  const handleToggleInboxStatus = async (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    await fetch("/api/inboxes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: nextStatus }),
+    });
+    fetchData();
+  };
+
+
   // Metrics
   const totalLeads = currentLeads.length;
   const sentCount = currentLeads.filter((l) => l.status === "SENT").length;
@@ -1175,10 +1186,19 @@ export default function Dashboard() {
                 <div key={inbox.id} className="bg-[#0A0A0A] border border-[#262626] rounded-lg p-4 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold text-white font-mono truncate">{inbox.email}</div>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#171717] text-[#A3A3A3] border border-[#333333]">
-                        {inbox.status}
-                      </span>
+                      <div className="text-xs font-semibold text-white font-mono truncate mr-2">{inbox.email}</div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleInboxStatus(inbox.id, inbox.status)}
+                        title="Click to toggle Active / Rest (Paused) like Instantly"
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer font-bold shrink-0 ${
+                          inbox.status === "ACTIVE"
+                            ? "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/20"
+                            : "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30 hover:bg-[#F59E0B]/20"
+                        }`}
+                      >
+                        ● {inbox.status}
+                      </button>
                     </div>
                     <div className="text-[11px] text-[#737373] font-mono mt-1">Sender: {inbox.display_name}</div>
                     

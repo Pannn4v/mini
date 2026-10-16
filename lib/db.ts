@@ -547,9 +547,12 @@ export async function getEligibleInbox(): Promise<Inbox | null> {
 
       if (!error) {
         if (data && data.length > 0) {
+          const todayEst = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
           const eligible = (data as Inbox[]).find((i) => {
             const lastSentMs = new Date(i.last_sent_at || 0).getTime();
-            return i.sent_today < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
+            const lastSentEst = i.last_sent_at ? new Date(i.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "";
+            const currentSentToday = (lastSentEst === todayEst) ? i.sent_today : 0;
+            return currentSentToday < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
           });
           if (eligible) return eligible;
         }
@@ -561,9 +564,12 @@ export async function getEligibleInbox(): Promise<Inbox | null> {
   }
 
   const db = ensureDbFile();
+  const todayEstLocal = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
   const candidates = db.inboxes.filter((i) => {
     const lastSentMs = new Date(i.last_sent_at || 0).getTime();
-    return i.status === "ACTIVE" && i.sent_today < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
+    const lastSentEst = i.last_sent_at ? new Date(i.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "";
+    const currentSentToday = (lastSentEst === todayEstLocal) ? i.sent_today : 0;
+    return i.status === "ACTIVE" && currentSentToday < i.daily_limit && (nowMs - lastSentMs >= MIN_INBOX_COOLDOWN_MS);
   });
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => new Date(a.last_sent_at).getTime() - new Date(b.last_sent_at).getTime());
