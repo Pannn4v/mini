@@ -1208,17 +1208,33 @@ export default function Dashboard() {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-[#1C1C1C] flex items-center justify-between text-[11px] font-mono">
-                    <span className="text-[#555]">
-                      {inbox.last_sent_at && inbox.last_sent_at !== "1970-01-01T00:00:00.000Z"
-                        ? `Last: ${new Date(inbox.last_sent_at).toLocaleTimeString()}`
-                        : "Rested (Ready)"}
-                    </span>
                     <button
-                      onClick={() => handleDeleteInbox(inbox.id)}
-                      className="text-[#555] hover:text-[#EF4444] transition-colors"
+                      type="button"
+                      onClick={() => handleToggleInboxStatus(inbox.id, inbox.status)}
+                      className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-all cursor-pointer ${
+                        inbox.status === "ACTIVE"
+                          ? "bg-[#262626] text-[#F59E0B] hover:bg-[#333] border border-[#404040]"
+                          : "bg-[#10B981]/20 text-[#10B981] hover:bg-[#10B981]/30 border border-[#10B981]/40"
+                      }`}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {inbox.status === "ACTIVE" ? "⏸ Rest Inbox" : "▶ Resume Sending"}
                     </button>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#555] text-[10px]">
+                        {inbox.last_sent_at && inbox.last_sent_at !== "1970-01-01T00:00:00.000Z"
+                          ? `${new Date(inbox.last_sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                          : "Ready"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInbox(inbox.id)}
+                        className="text-[#555] hover:text-[#EF4444] transition-colors p-1"
+                        title="Delete inbox"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
