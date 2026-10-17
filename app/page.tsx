@@ -167,7 +167,11 @@ export default function Dashboard() {
 
   const isFloridaWindowActive = () => {
     try {
-      const timeStr = new Date().toLocaleTimeString("en-US", {
+      const now = new Date();
+      const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(now);
+      if (dayOfWeek === "Sat" || dayOfWeek === "Sun") return false;
+
+      const timeStr = now.toLocaleTimeString("en-US", {
         timeZone: "America/New_York",
         hour12: false,
         hour: "2-digit",

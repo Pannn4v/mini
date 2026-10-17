@@ -74,32 +74,26 @@ async function handleDispatch(req: Request) {
     const [endH, endM] = (campaign.window_end || "18:00").split(":").map(Number);
     const endTotalMins = endH * 60 + endM;
 
-    // 3b. Day of Week Gate (Sunday Hard-Shutdown, Saturday Half-Day)
+    // 3b. Day of Week Gate (Saturday & Sunday 100% Hard-Shutdown)
     const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: campaign.timezone, weekday: "short" }).format(now);
     
-    // Sunday: 100% Hard Shutdown to protect domain reputation
-    if (!forceSend && dayOfWeek === "Sun") {
+    // Weekend (Sat & Sun): 100% Hard Shutdown to protect domain reputation
+    if (!forceSend && (dayOfWeek === "Sat" || dayOfWeek === "Sun")) {
       return NextResponse.json({
         status: "WEEKEND_SHUTDOWN",
         day: dayOfWeek,
         current_time_est: estTimeStr,
-        message: "Sunday Hard-Shutdown active. Inboxes resting to protect domain reputation.",
+        message: "Weekend Hard-Shutdown active (Sat-Sun Closed). Inboxes resting until Monday 07:30 EST.",
       });
     }
 
-    // Saturday: Half-Day tactical window (07:30 - 13:00 EST)
-    let effectiveEndMins = endTotalMins;
-    if (dayOfWeek === "Sat") {
-      effectiveEndMins = 13 * 60; // 13:00 PM EST cut-off
-    }
-
-    if (!forceSend && (currTotalMins < startTotalMins || currTotalMins >= effectiveEndMins)) {
+    if (!forceSend && (currTotalMins < startTotalMins || currTotalMins >= endTotalMins)) {
       return NextResponse.json({
         status: "IDLE_OUTSIDE_WINDOW",
         campaign_name: campaign.name,
         current_time_est: estTimeStr,
         day: dayOfWeek,
-        allowed_window: `${campaign.window_start} - ${dayOfWeek === "Sat" ? "13:00" : campaign.window_end} ${campaign.timezone}`,
+        allowed_window: `${campaign.window_start} - ${campaign.window_end} ${campaign.timezone}`,
         message: "Current time is outside target business hours. Engine is in power-save sleep mode.",
       });
     }
