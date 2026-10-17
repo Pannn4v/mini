@@ -192,8 +192,13 @@ async function handleDispatch(req: Request) {
       });
     }
 
+    const todayEst = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
+    const lastSentEst = inbox.last_sent_at ? new Date(inbox.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "";
+    const isNewDay = lastSentEst !== todayEst;
+    const nextSentToday = isNewDay ? 1 : (inbox.sent_today + 1);
+
     await updateInbox(inbox.id, {
-      sent_today: inbox.sent_today + 1,
+      sent_today: nextSentToday,
       last_sent_at: new Date().toISOString(),
     });
 

@@ -184,10 +184,21 @@ function saveDb(data: DatabaseSchema) {
 // INBOXES OPERATIONS
 // -----------------------------------------------------------------------------
 export async function getInboxes(): Promise<Inbox[]> {
+  const todayEst = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
   if (supabase) {
     try {
       const { data, error } = await supabase.from("inboxes").select("*").order("created_at", { ascending: true });
-      if (!error) return (data || []) as Inbox[];
+      if (!error && data) {
+        const inboxes = data as Inbox[];
+        for (const i of inboxes) {
+          const lastSentEst = i.last_sent_at ? new Date(i.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "";
+          if (lastSentEst && lastSentEst !== todayEst && i.sent_today > 0) {
+            i.sent_today = 0;
+            supabase.from("inboxes").update({ sent_today: 0 }).eq("id", i.id).then();
+          }
+        }
+        return inboxes;
+      }
     } catch (e) {
       console.warn("Supabase getInboxes fallback:", e);
     }
