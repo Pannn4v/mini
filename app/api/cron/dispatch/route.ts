@@ -131,18 +131,29 @@ async function handleDispatch(req: Request) {
         text: finalBody,
       });
     } catch (smtpErr: any) {
-      console.error(`[SMTP Error] ${inbox.email} -> ${lead.recipient_email}:`, smtpErr);
+      const errMsg = String(smtpErr?.message || "SMTP Dispatch Error");
+      console.error(`[SMTP Error] ${inbox.email} -> ${lead.recipient_email}:`, errMsg);
 
-      // Check rate limit or auth failure
-      const isRateLimit = smtpErr?.responseCode === 421 || smtpErr?.responseCode === 429;
-      if (isRateLimit) {
-        await updateInbox(inbox.id, { status: "COOLDOWN" });
+      const isDailyLimit =
+        errMsg.includes("Daily user sending limit exceeded") ||
+        errMsg.includes("5.4.5") ||
+        smtpErr?.responseCode === 421 ||
+        smtpErr?.responseCode === 429;
+
+      if (isDailyLimit) {
+        // Immediately mark this inbox as full for today so next tick rotates to the other inbox
+        await updateInbox(inbox.id, {
+          sent_today: inbox.daily_limit,
+          last_sent_at: new Date().toISOString(),
+        });
+      } else {
+        const nextAttempts = (lead.attempts || 0) + 1;
+        await updateLead(lead.id, {
+          attempts: nextAttempts,
+          last_error: errMsg,
+          ...(nextAttempts >= 3 ? { status: "FAILED" } : {}),
+        });
       }
-
-      await updateLead(lead.id, {
-        attempts: (lead.attempts || 0) + 1,
-        last_error: smtpErr.message || "SMTP Dispatch Error",
-      });
 
       await logOutbound({
         lead_id: lead.id,
@@ -150,14 +161,17 @@ async function handleDispatch(req: Request) {
         recipient_email: lead.recipient_email,
         subject: finalSubject,
         status: "FAILED",
-        smtp_response: smtpErr.message,
+        smtp_response: errMsg,
       });
 
+      // Return HTTP 200 so external cron (cron-job.org) never disables the job on SMTP bounce/limit
       return NextResponse.json({
-        status: "SMTP_ERROR",
-        error: smtpErr.message,
+        status: isDailyLimit ? "INBOX_DAILY_LIMIT_ROTATED" : "SMTP_ERROR_HANDLED",
+        inbox: inbox.email,
+        lead: lead.recipient_email,
+        error: errMsg,
         duration_ms: Date.now() - startTime,
-      }, { status: 500 });
+      }, { status: 200 });
     }
 
     // 8. Atomic Status Updates & Multi-Step Sequence Transition
