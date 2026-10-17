@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCampaign, getNextDueLead, getEligibleInbox, updateLead, updateInbox, logOutbound, getLeads } from "@/lib/db";
+import { getCampaigns, getInboxes, getNextDueLead, getEligibleInbox, updateLead, updateInbox, logOutbound } from "@/lib/db";
 import { parseSpintax } from "@/lib/spintax";
 import { createGmailTransporter } from "@/lib/mailer";
 
@@ -40,12 +40,128 @@ async function handleDispatch(req: Request) {
       }
     }
 
-    // 2. Identify Target Campaign / Next Due Lead
+    // 2. Pre-DB Weekend Hard-Shutdown Gate (Zero Supabase reads on Sat/Sun)
     const campaignId = url.searchParams.get("campaign_id") || undefined;
     const forceSend = url.searchParams.get("force") === "true";
+    const now = new Date();
+    const nowMs = now.getTime();
 
-    // Query next pending lead (from specified campaign or any ACTIVE campaign)
-    const lead = await getNextDueLead(campaignId);
+    const estDayOfWeek = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+    }).format(now);
+    const estTimeStr = now.toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    if (!forceSend && (estDayOfWeek === "Sat" || estDayOfWeek === "Sun")) {
+      return NextResponse.json({
+        status: "WEEKEND_SHUTDOWN",
+        day: estDayOfWeek,
+        current_time_est: estTimeStr,
+        message: "Weekend Hard-Shutdown active (Sat-Sun Closed). Inboxes resting until Monday 07:30 EST.",
+      });
+    }
+
+    // 3. Resolve Active Campaigns & Filter by Business Window BEFORE querying Leads
+    const allCampaigns = await getCampaigns();
+    const candidateCampaigns = allCampaigns.filter((c) => {
+      if (campaignId && campaignId !== "all" && c.id !== campaignId) return false;
+      return c.status === "ACTIVE";
+    });
+
+    if (candidateCampaigns.length === 0) {
+      return NextResponse.json({
+        status: "CAMPAIGN_INACTIVE",
+        message: "No active campaigns found.",
+      });
+    }
+
+    const openCampaigns = candidateCampaigns.filter((c) => {
+      if (forceSend) return true;
+      const tz = c.timezone || "America/New_York";
+      const dayStr = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(now);
+      if (dayStr === "Sat" || dayStr === "Sun") return false;
+
+      const tStr = now.toLocaleTimeString("en-US", {
+        timeZone: tz,
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const [cH, cM] = tStr.split(":").map(Number);
+      const currMins = cH * 60 + cM;
+
+      const [sH, sM] = (c.window_start || "07:30").split(":").map(Number);
+      const [eH, eM] = (c.window_end || "18:00").split(":").map(Number);
+      return currMins >= sH * 60 + sM && currMins < eH * 60 + eM;
+    });
+
+    if (openCampaigns.length === 0) {
+      const refCamp = candidateCampaigns[0];
+      return NextResponse.json({
+        status: "IDLE_OUTSIDE_WINDOW",
+        campaign_name: refCamp.name,
+        current_time_est: estTimeStr,
+        day: estDayOfWeek,
+        allowed_window: `${refCamp.window_start} - ${refCamp.window_end} ${refCamp.timezone}`,
+        message: "Current time is outside target business hours. Engine is in power-save sleep mode.",
+      });
+    }
+
+    // 4. Global / Campaign Jitter Gate (4-8 Min Random Delay Locked to Last Sent Timestamp)
+    const allInboxes = await getInboxes();
+    const activeInboxes = allInboxes.filter((i) => i.status === "ACTIVE");
+
+    if (activeInboxes.length === 0) {
+      return NextResponse.json({
+        status: "ALL_INBOXES_EXHAUSTED",
+        message: "No active inboxes connected.",
+      });
+    }
+
+    const latestSentMs = allInboxes.reduce((maxMs, i) => {
+      const ms = i.last_sent_at ? new Date(i.last_sent_at).getTime() : 0;
+      return ms > maxMs ? ms : maxMs;
+    }, 0);
+
+    const primaryCamp = openCampaigns[0];
+    const minMins = primaryCamp.min_interval_mins || 4;
+    const maxMins = Math.max(minMins, primaryCamp.max_interval_mins || 8);
+    const jitterRange = maxMins - minMins + 1;
+    // Deterministic jitter seeded from latestSentMs so every cron tick agrees on the exact target wait time
+    const requiredJitterMins = minMins + (Math.floor(latestSentMs / 1000) % jitterRange);
+    const requiredJitterMs = requiredJitterMins * 60 * 1000;
+
+    if (!forceSend && latestSentMs > 0 && nowMs - latestSentMs < requiredJitterMs) {
+      const remainingSec = Math.ceil((requiredJitterMs - (nowMs - latestSentMs)) / 1000);
+      return NextResponse.json({
+        status: "JITTER_COOLDOWN_ACTIVE",
+        required_gap_mins: requiredJitterMins,
+        wait_remaining_sec: remainingSec,
+        message: `Human-like pacing active (${requiredJitterMins}m gap). Next send in ${remainingSec}s.`,
+      });
+    }
+
+    // 5. Select eligible round-robin inbox (under daily_limit & past 120s safety cooldown)
+    const inbox = await getEligibleInbox();
+    if (!inbox) {
+      return NextResponse.json({
+        status: "ALL_INBOXES_EXHAUSTED",
+        message: "All active inboxes have reached their daily limit or are in cooldown.",
+      });
+    }
+
+    // 6. Query next pending lead across currently open campaigns
+    let lead = null;
+    for (const c of openCampaigns) {
+      lead = await getNextDueLead(c.id);
+      if (lead) break;
+    }
+
     if (!lead) {
       return NextResponse.json({
         status: "NO_PENDING_LEADS",
@@ -53,61 +169,7 @@ async function handleDispatch(req: Request) {
       });
     }
 
-    // Resolve lead's campaign for schedule & timezone checks
-    const campaign = await getCampaign(lead.campaign_id);
-    if (!campaign || campaign.status !== "ACTIVE") {
-      return NextResponse.json({ 
-        status: "CAMPAIGN_INACTIVE", 
-        message: `Campaign ${campaign?.name || lead.campaign_id} is currently paused.` 
-      });
-    }
-
-    // 3. Timezone Business Hours Gate
-    const now = new Date();
-    const estTimeStr = now.toLocaleTimeString("en-US", { timeZone: campaign.timezone, hour12: false, hour: "2-digit", minute: "2-digit" });
-    const [currHour, currMin] = estTimeStr.split(":").map(Number);
-    const currTotalMins = currHour * 60 + currMin;
-
-    const [startH, startM] = (campaign.window_start || "07:30").split(":").map(Number);
-    const startTotalMins = startH * 60 + startM;
-
-    const [endH, endM] = (campaign.window_end || "18:00").split(":").map(Number);
-    const endTotalMins = endH * 60 + endM;
-
-    // 3b. Day of Week Gate (Saturday & Sunday 100% Hard-Shutdown)
-    const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: campaign.timezone, weekday: "short" }).format(now);
-    
-    // Weekend (Sat & Sun): 100% Hard Shutdown to protect domain reputation
-    if (!forceSend && (dayOfWeek === "Sat" || dayOfWeek === "Sun")) {
-      return NextResponse.json({
-        status: "WEEKEND_SHUTDOWN",
-        day: dayOfWeek,
-        current_time_est: estTimeStr,
-        message: "Weekend Hard-Shutdown active (Sat-Sun Closed). Inboxes resting until Monday 07:30 EST.",
-      });
-    }
-
-    if (!forceSend && (currTotalMins < startTotalMins || currTotalMins >= endTotalMins)) {
-      return NextResponse.json({
-        status: "IDLE_OUTSIDE_WINDOW",
-        campaign_name: campaign.name,
-        current_time_est: estTimeStr,
-        day: dayOfWeek,
-        allowed_window: `${campaign.window_start} - ${campaign.window_end} ${campaign.timezone}`,
-        message: "Current time is outside target business hours. Engine is in power-save sleep mode.",
-      });
-    }
-
-    // 5. Select eligible round-robin inbox
-    const inbox = await getEligibleInbox();
-    if (!inbox) {
-      return NextResponse.json({
-        status: "ALL_INBOXES_EXHAUSTED",
-        message: "All inboxes have reached their daily limit or are in cooldown.",
-      });
-    }
-
-    // 6. Compile Dynamic Spintax & Personalization Tokens
+    // 7. Compile Dynamic Spintax & Personalization Tokens
     const vars: Record<string, string> = {
       first_name: (lead.recipient_name || "").split(" ")[0] || "there",
       name: lead.recipient_name || "there",
@@ -119,9 +181,9 @@ async function handleDispatch(req: Request) {
     const finalSubject = parseSpintax(lead.subject_template, vars);
     const finalBody = parseSpintax(lead.body_template, vars);
 
-    // 7. Dispatch Email via Google SMTP
+    // 8. Dispatch Email via Google SMTP
     const transporter = createGmailTransporter(inbox);
-    
+
     let sendResult;
     try {
       sendResult = await transporter.sendMail({
@@ -132,6 +194,7 @@ async function handleDispatch(req: Request) {
       });
     } catch (smtpErr: any) {
       const errMsg = String(smtpErr?.message || "SMTP Dispatch Error");
+      const errLower = errMsg.toLowerCase();
       console.error(`[SMTP Error] ${inbox.email} -> ${lead.recipient_email}:`, errMsg);
 
       const isDailyLimit =
@@ -140,17 +203,39 @@ async function handleDispatch(req: Request) {
         smtpErr?.responseCode === 421 ||
         smtpErr?.responseCode === 429;
 
+      const isHardBounce =
+        !isDailyLimit &&
+        (errMsg.includes("5.1.1") ||
+          errLower.includes("does not exist") ||
+          errLower.includes("user unknown") ||
+          errLower.includes("invalid recipient") ||
+          errLower.includes("address rejected") ||
+          errLower.includes("no such user") ||
+          smtpErr?.responseCode === 550 ||
+          smtpErr?.responseCode === 553 ||
+          smtpErr?.responseCode === 501);
+
       if (isDailyLimit) {
         // Immediately mark this inbox as full for today so next tick rotates to the other inbox
         await updateInbox(inbox.id, {
           sent_today: inbox.daily_limit,
           last_sent_at: new Date().toISOString(),
         });
+      } else if (isHardBounce) {
+        // Instantly.ai standard: never retry a 550 Hard Bounce (protects Gmail reputation)
+        await updateLead(lead.id, {
+          attempts: (lead.attempts || 0) + 1,
+          last_error: errMsg,
+          status: "FAILED",
+        });
       } else {
+        // Transient network error: backoff 15 minutes so healthy leads behind it aren't blocked
         const nextAttempts = (lead.attempts || 0) + 1;
+        const backoffTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
         await updateLead(lead.id, {
           attempts: nextAttempts,
           last_error: errMsg,
+          scheduled_at: backoffTime,
           ...(nextAttempts >= 3 ? { status: "FAILED" } : {}),
         });
       }
@@ -166,7 +251,11 @@ async function handleDispatch(req: Request) {
 
       // Return HTTP 200 so external cron (cron-job.org) never disables the job on SMTP bounce/limit
       return NextResponse.json({
-        status: isDailyLimit ? "INBOX_DAILY_LIMIT_ROTATED" : "SMTP_ERROR_HANDLED",
+        status: isDailyLimit
+          ? "INBOX_DAILY_LIMIT_ROTATED"
+          : isHardBounce
+          ? "LEAD_HARD_BOUNCED"
+          : "SMTP_TRANSIENT_BACKOFF",
         inbox: inbox.email,
         lead: lead.recipient_email,
         error: errMsg,
@@ -174,40 +263,24 @@ async function handleDispatch(req: Request) {
       }, { status: 200 });
     }
 
-    // 8. Atomic Status Updates & Multi-Step Sequence Transition
-    const hasFollowup = !!lead.followup_body || (lead.step === 1 && !!lead.followup_subject);
-    const isStep1 = lead.status === "PENDING" && (lead.step === 1 || !lead.step);
+    // 9. Mark Lead as SENT & Update Inbox Counter
+    const sentIso = new Date().toISOString();
+    await updateLead(lead.id, {
+      status: "SENT",
+      sent_at: sentIso,
+      assigned_inbox_id: inbox.id,
+    });
 
-    if (isStep1 && hasFollowup) {
-      // Transition to Step 2 (scheduled 3 days delay, marked SENT for Step 1)
-      const delayDays = lead.followup_delay_days || 3;
-      const nextScheduled = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000).toISOString();
-      const nextSubject = lead.followup_subject || (lead.subject_template.startsWith("Re:") ? lead.subject_template : `Re: ${lead.subject_template}`);
-      const nextBody = lead.followup_body || lead.body_template;
-
-      await updateLead(lead.id, {
-        status: "SENT",
-        scheduled_at: nextScheduled,
-        sent_at: new Date().toISOString(),
-        assigned_inbox_id: inbox.id,
-      });
-    } else {
-      // Completed or single-touch
-      await updateLead(lead.id, {
-        status: "SENT",
-        sent_at: new Date().toISOString(),
-        assigned_inbox_id: inbox.id,
-      });
-    }
-
-    const todayEst = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
-    const lastSentEst = inbox.last_sent_at ? new Date(inbox.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "";
+    const todayEst = now.toLocaleDateString("en-US", { timeZone: "America/New_York" });
+    const lastSentEst = inbox.last_sent_at
+      ? new Date(inbox.last_sent_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })
+      : "";
     const isNewDay = lastSentEst !== todayEst;
-    const nextSentToday = isNewDay ? 1 : (inbox.sent_today + 1);
+    const nextSentToday = isNewDay ? 1 : inbox.sent_today + 1;
 
     await updateInbox(inbox.id, {
       sent_today: nextSentToday,
-      last_sent_at: new Date().toISOString(),
+      last_sent_at: sentIso,
     });
 
     await logOutbound({
@@ -218,23 +291,6 @@ async function handleDispatch(req: Request) {
       status: "SUCCESS",
       smtp_response: sendResult.response,
     });
-
-    // 9. Schedule next lead with randomized jitter interval (e.g. 4 to 8 minutes)
-    const allLeads = await getLeads();
-    const remainingDue = allLeads.filter(
-      (l) => (l.status === "PENDING" || (l.status === "WAITING_FOLLOWUP" && new Date(l.scheduled_at) <= now)) && l.id !== lead.id
-    );
-    if (remainingDue.length > 0) {
-      const minMins = campaign.min_interval_mins || 4;
-      const maxMins = campaign.max_interval_mins || 8;
-      const jitterMins = Math.floor(Math.random() * (maxMins - minMins + 1)) + minMins;
-      const nextTime = new Date(Date.now() + jitterMins * 60 * 1000).toISOString();
-
-      // Set the immediate next lead
-      await updateLead(remainingDue[0].id, {
-        scheduled_at: nextTime,
-      });
-    }
 
     return NextResponse.json({
       status: "DISPATCHED_SUCCESS",

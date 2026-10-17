@@ -499,7 +499,7 @@ export async function clearLeads(campaignId?: string): Promise<void> {
 // ENGINE DISPATCHER QUERIES
 // -----------------------------------------------------------------------------
 export async function getNextDueLead(campaignId?: string): Promise<Lead | null> {
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
 
   if (supabase) {
     try {
@@ -512,18 +512,23 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
         activeCampIds = camps.map((c) => c.id);
       }
 
-      let query = supabase
+      const { data, error } = await supabase
         .from("leads")
         .select("*")
-        .in("status", ["PENDING", "WAITING_FOLLOWUP"])
+        .eq("status", "PENDING")
         .in("campaign_id", activeCampIds)
-        .lte("scheduled_at", nowIso)
         .order("scheduled_at", { ascending: true })
         .limit(1);
 
-      const { data, error } = await query;
       if (!error) {
-        if (data && data.length > 0) return data[0] as Lead;
+        if (data && data.length > 0) {
+          const candidate = data[0] as Lead;
+          // If lead is in transient error backoff (attempts > 0), wait until backoff expires
+          if ((candidate.attempts || 0) > 0 && new Date(candidate.scheduled_at).getTime() > nowMs) {
+            return null;
+          }
+          return candidate;
+        }
         return null;
       }
     } catch (e) {
@@ -532,16 +537,21 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
   }
 
   const db = ensureDbFile();
-  const now = new Date();
-  
-  if (campaignId && campaignId !== "all") {
-    const lead = db.leads.find((l) => l.campaign_id === campaignId && (l.status === "PENDING" || l.status === "WAITING_FOLLOWUP") && new Date(l.scheduled_at) <= now);
-    return lead || null;
-  }
+  const activeCampIds =
+    campaignId && campaignId !== "all"
+      ? new Set([campaignId])
+      : new Set(db.campaigns.filter((c) => c.status === "ACTIVE").map((c) => c.id));
 
-  const activeCampIds = new Set(db.campaigns.filter((c) => c.status === "ACTIVE").map((c) => c.id));
-  const lead = db.leads.find((l) => activeCampIds.has(l.campaign_id) && (l.status === "PENDING" || l.status === "WAITING_FOLLOWUP") && new Date(l.scheduled_at) <= now);
-  return lead || null;
+  const candidates = db.leads
+    .filter((l) => activeCampIds.has(l.campaign_id) && l.status === "PENDING")
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+
+  if (candidates.length === 0) return null;
+  const first = candidates[0];
+  if ((first.attempts || 0) > 0 && new Date(first.scheduled_at).getTime() > nowMs) {
+    return null;
+  }
+  return first;
 }
 
 export async function getEligibleInbox(): Promise<Inbox | null> {
