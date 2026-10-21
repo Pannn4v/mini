@@ -93,7 +93,6 @@ async function handleSync(req: Request) {
           if (matchedLead.status !== "REPLIED") {
             await updateLead(matchedLead.id, {
               status: "REPLIED",
-              last_error: `[REPLIED] ${rep.date}`,
             });
             autoRepliedLeads.push({
               email: rep.sender_email,

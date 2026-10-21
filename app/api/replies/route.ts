@@ -86,7 +86,6 @@ export async function POST(req: Request) {
           if (matchedLead.status !== "REPLIED") {
             await updateLead(matchedLead.id, {
               status: "REPLIED",
-              last_error: `[REPLIED] ${rep.date}`,
             });
             matchedLead.status = "REPLIED";
           }

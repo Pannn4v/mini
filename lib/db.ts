@@ -477,9 +477,7 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<Le
               sanitized.status = value;
             } else if (value === "WAITING_FOLLOWUP" || value === "REPLIED") {
               sanitized.status = "SENT";
-              if (value === "REPLIED" && !sanitized.last_error) {
-                sanitized.last_error = `[REPLIED] ${new Date().toISOString()}`;
-              }
+              // Never overwrite last_error if it is not explicitly provided in updates
             }
           } else {
             sanitized[key] = value;
@@ -721,28 +719,50 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
       if (!error && data && data.length > 0) {
         const parsedReplies: ReplyRecord[] = [];
         for (const l of data) {
-          if (!l.last_error || !l.last_error.startsWith("[REPLY_DATA]:")) continue;
-          try {
-            const rawJson = l.last_error.replace("[REPLY_DATA]:", "");
-            const payload = JSON.parse(rawJson);
+          if (!l.last_error) continue;
+          if (l.last_error.startsWith("[REPLY_DATA]:")) {
+            try {
+              const rawJson = l.last_error.replace("[REPLY_DATA]:", "");
+              const payload = JSON.parse(rawJson);
+              parsedReplies.push({
+                id: `rep_${l.id}`,
+                lead_id: l.id,
+                campaign_id: l.campaign_id,
+                inbox_email: payload.inbox_email || "Gmail Inbox",
+                sender_email: l.recipient_email,
+                sender_name: payload.sender_name || l.recipient_name,
+                recipient_name: l.recipient_name,
+                company_name: l.company_name,
+                city: l.city,
+                subject: payload.subject || "(No Subject)",
+                body_text: payload.body_text || "",
+                received_at: payload.received_at || l.sent_at || new Date().toISOString(),
+                outbound_subject: l.subject_template,
+                outbound_body: l.body_template,
+                created_at: payload.received_at || new Date().toISOString(),
+              });
+              continue;
+            } catch {}
+          } else if (l.last_error.startsWith("[REPLIED]")) {
+            const dateStr = l.last_error.replace("[REPLIED]", "").trim();
             parsedReplies.push({
               id: `rep_${l.id}`,
               lead_id: l.id,
               campaign_id: l.campaign_id,
-              inbox_email: payload.inbox_email || "Gmail Inbox",
+              inbox_email: l.assigned_inbox_id || "Gmail Inbox",
               sender_email: l.recipient_email,
-              sender_name: payload.sender_name || l.recipient_name,
+              sender_name: l.recipient_name,
               recipient_name: l.recipient_name,
               company_name: l.company_name,
               city: l.city,
-              subject: payload.subject || "(No Subject)",
-              body_text: payload.body_text || "",
-              received_at: payload.received_at || l.sent_at || new Date().toISOString(),
+              subject: "Re: Prospect Reply Captured",
+              body_text: "Prospect inbound confirmed by IMAP scanner.",
+              received_at: dateStr || l.sent_at || new Date().toISOString(),
               outbound_subject: l.subject_template,
               outbound_body: l.body_template,
-              created_at: payload.received_at || new Date().toISOString(),
+              created_at: dateStr || new Date().toISOString(),
             });
-          } catch {}
+          }
         }
         if (parsedReplies.length > 0) {
           parsedReplies.sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
