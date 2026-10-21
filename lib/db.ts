@@ -404,7 +404,7 @@ export async function getLeads(campaignId?: string): Promise<Lead[]> {
       if (!error && data) {
         const list = data as Lead[];
         return list.map((l) => {
-          if (l.last_error && l.last_error.includes("[REPLIED]")) {
+          if (l.last_error && (l.last_error.includes("[REPLIED]") || l.last_error.includes("[REPLY_DATA]:"))) {
             return { ...l, status: "REPLIED" as const };
           }
           return l;
@@ -701,6 +701,7 @@ function saveRepliesFile(replies: ReplyRecord[]) {
 
 export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
   if (supabase) {
+    // 1. Try dedicated public.replies table
     try {
       let query = supabase.from("replies").select("*").order("received_at", { ascending: false });
       if (campaignId && campaignId !== "all") {
@@ -709,6 +710,48 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
       const { data, error } = await query;
       if (!error && data && data.length > 0) return data as ReplyRecord[];
     } catch {}
+
+    // 2. Zero-CapEx Fallback: Parse from existing public.leads table
+    try {
+      let query = supabase.from("leads").select("*").not("last_error", "is", null);
+      if (campaignId && campaignId !== "all") {
+        query = query.eq("campaign_id", campaignId);
+      }
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        const parsedReplies: ReplyRecord[] = [];
+        for (const l of data) {
+          if (!l.last_error || !l.last_error.startsWith("[REPLY_DATA]:")) continue;
+          try {
+            const rawJson = l.last_error.replace("[REPLY_DATA]:", "");
+            const payload = JSON.parse(rawJson);
+            parsedReplies.push({
+              id: `rep_${l.id}`,
+              lead_id: l.id,
+              campaign_id: l.campaign_id,
+              inbox_email: payload.inbox_email || "Gmail Inbox",
+              sender_email: l.recipient_email,
+              sender_name: payload.sender_name || l.recipient_name,
+              recipient_name: l.recipient_name,
+              company_name: l.company_name,
+              city: l.city,
+              subject: payload.subject || "(No Subject)",
+              body_text: payload.body_text || "",
+              received_at: payload.received_at || l.sent_at || new Date().toISOString(),
+              outbound_subject: l.subject_template,
+              outbound_body: l.body_template,
+              created_at: payload.received_at || new Date().toISOString(),
+            });
+          } catch {}
+        }
+        if (parsedReplies.length > 0) {
+          parsedReplies.sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
+          return parsedReplies;
+        }
+      }
+    } catch (e) {
+      console.warn("Supabase leads fallback getReplies error:", e);
+    }
   }
 
   const localReplies = ensureRepliesFile();
@@ -725,7 +768,7 @@ export async function saveReply(reply: Omit<ReplyRecord, "id" | "created_at">): 
     created_at: new Date().toISOString(),
   };
 
-  // 1. Try Supabase if table exists
+  // 1. Try Supabase dedicated replies table if it exists
   if (supabase) {
     try {
       const { data, error } = await supabase.from("replies").insert(newEntry).select().single();
@@ -738,9 +781,32 @@ export async function saveReply(reply: Omit<ReplyRecord, "id" | "created_at">): 
         return data as ReplyRecord;
       }
     } catch {}
+
+    // 2. Also persist reply payload into public.leads table (zero migration barrier)
+    if (reply.lead_id) {
+      try {
+        const payload = {
+          inbox_email: reply.inbox_email,
+          sender_email: reply.sender_email,
+          sender_name: reply.sender_name,
+          subject: reply.subject,
+          body_text: reply.body_text,
+          received_at: reply.received_at,
+        };
+        await supabase
+          .from("leads")
+          .update({
+            last_error: `[REPLY_DATA]:${JSON.stringify(payload)}`,
+            status: "SENT",
+          })
+          .eq("id", reply.lead_id);
+      } catch (e) {
+        console.warn("Supabase lead last_error reply update fallback:", e);
+      }
+    }
   }
 
-  // 2. Local JSON store fallback
+  // 3. Local JSON store fallback
   const local = ensureRepliesFile();
   const existingIdx = local.findIndex(
     (r) =>
