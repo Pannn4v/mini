@@ -1,20 +1,103 @@
 import { ImapFlow } from "imapflow";
 import { Inbox } from "./db";
 
+export interface ScannedReply {
+  message_id?: string;
+  sender_email: string;
+  sender_name?: string;
+  subject: string;
+  body_text: string;
+  date: string;
+}
+
 export interface SyncResult {
   inbox_email: string;
-  new_replies_found: string[];
+  replies_found: ScannedReply[];
   error?: string;
 }
 
 /**
- * Connects to a single inbox via IMAP (TLS 993) with defensive timeout,
- * reads recent inbound senders from INBOX, and returns detected email addresses.
+ * Robust Quoted-Printable decoder handling multi-byte UTF-8 sequences.
  */
-export async function scanInboxForReplies(inbox: Inbox, maxMessagesToCheck = 20): Promise<SyncResult> {
+export function decodeQuotedPrintable(raw: string): string {
+  // Normalize soft line breaks
+  const normalized = raw.replace(/=\r?\n/g, "");
+  const bytes: number[] = [];
+  
+  for (let i = 0; i < normalized.length; i++) {
+    if (normalized[i] === "=" && /[0-9A-Fa-f]{2}/.test(normalized.substring(i + 1, i + 3))) {
+      bytes.push(parseInt(normalized.substring(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(normalized.charCodeAt(i));
+    }
+  }
+  
+  return Buffer.from(bytes).toString("utf-8");
+}
+
+/**
+ * Extracts the plain text body from a raw MIME message.
+ */
+export function parseEmailBody(mime: string): string {
+  if (!mime) return "";
+
+  // 1. Check if multipart
+  const boundaryMatch = mime.match(/boundary="?([^"\r\n;]+)"?/i);
+  if (boundaryMatch) {
+    const boundary = boundaryMatch[1];
+    const parts = mime.split(new RegExp(`--${boundary.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}`));
+    
+    for (const part of parts) {
+      if (/Content-Type:\s*text\/plain/i.test(part)) {
+        const headerEndIdx = part.search(/\r?\n\r?\n/);
+        if (headerEndIdx !== -1) {
+          const header = part.substring(0, headerEndIdx);
+          let body = part.substring(headerEndIdx).replace(/^\r?\n\r?\n/, "").trim();
+          
+          if (/Content-Transfer-Encoding:\s*quoted-printable/i.test(header)) {
+            body = decodeQuotedPrintable(body);
+          } else if (/Content-Transfer-Encoding:\s*base64/i.test(header)) {
+            try {
+              body = Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf-8");
+            } catch {}
+          }
+          return body.trim();
+        }
+      }
+    }
+  }
+
+  // 2. Single-part fallback
+  const headerEnd = mime.search(/\r?\n\r?\n/);
+  if (headerEnd !== -1) {
+    const header = mime.substring(0, headerEnd);
+    let body = mime.substring(headerEnd).replace(/^\r?\n\r?\n/, "").trim();
+    if (/Content-Transfer-Encoding:\s*quoted-printable/i.test(header)) {
+      body = decodeQuotedPrintable(body);
+    } else if (/Content-Transfer-Encoding:\s*base64/i.test(header)) {
+      try {
+        body = Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf-8");
+      } catch {}
+    }
+    return body.trim();
+  }
+
+  return mime.trim();
+}
+
+/**
+ * Connects to a single inbox via IMAP (TLS 993) with defensive timeout,
+ * reads recent inbound messages from INBOX, and returns matched prospect replies.
+ */
+export async function scanInboxForReplies(
+  inbox: Inbox,
+  maxMessagesToCheck = 30,
+  targetLeadEmails?: Set<string>
+): Promise<SyncResult> {
   const result: SyncResult = {
     inbox_email: inbox.email,
-    new_replies_found: [],
+    replies_found: [],
   };
 
   if (!inbox.email || !inbox.app_password) {
@@ -35,14 +118,14 @@ export async function scanInboxForReplies(inbox: Inbox, maxMessagesToCheck = 20)
     },
     logger: false,
     clientInfo: {
-      name: "MiniInstantlySync",
-      version: "1.0.0",
+      name: "MiniInstantlyUnibox",
+      version: "1.2.0",
     },
   });
 
-  // 10-second hard safety timeout
+  // 12-second hard safety timeout
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("IMAP connection timed out (10s)")), 10000);
+    setTimeout(() => reject(new Error("IMAP connection timed out (12s)")), 12000);
   });
 
   try {
@@ -50,7 +133,6 @@ export async function scanInboxForReplies(inbox: Inbox, maxMessagesToCheck = 20)
 
     const lock = await client.getMailboxLock("INBOX", { readOnly: true });
     try {
-      // Query recent messages
       const status = await client.status("INBOX", { messages: true });
       if (!status || !status.messages) {
         return result;
@@ -61,22 +143,44 @@ export async function scanInboxForReplies(inbox: Inbox, maxMessagesToCheck = 20)
       const startSeq = Math.max(1, totalMessages - maxMessagesToCheck + 1);
       const sequenceRange = `${startSeq}:${totalMessages}`;
 
-      const senders = new Set<string>();
-
-      for await (const message of client.fetch(sequenceRange, { envelope: true })) {
+      for await (const message of client.fetch(sequenceRange, { envelope: true, source: true })) {
         if (message.envelope && message.envelope.from && message.envelope.from.length > 0) {
           const fromAddress = message.envelope.from[0].address;
           if (fromAddress) {
             const cleanFrom = fromAddress.toLowerCase().trim();
-            // Don't flag own address or system alerts
-            if (cleanFrom !== inbox.email.toLowerCase() && !cleanFrom.includes("mailer-daemon")) {
-              senders.add(cleanFrom);
+            // Don't flag own address, system bounces, or mailer-daemons
+            if (
+              cleanFrom === inbox.email.toLowerCase() ||
+              cleanFrom.includes("mailer-daemon") ||
+              cleanFrom.includes("googlemail.com")
+            ) {
+              continue;
             }
+
+            // Strict Lead Matching: If targetLeadEmails is supplied, ignore any message from outside leads!
+            if (targetLeadEmails && !targetLeadEmails.has(cleanFrom)) {
+              continue;
+            }
+
+            const rawSource = message.source ? message.source.toString("utf-8") : "";
+            const bodyText = parseEmailBody(rawSource);
+            const senderName = message.envelope.from[0].name || "";
+            const subject = message.envelope.subject || "(No Subject)";
+            const dateStr = message.envelope.date
+              ? new Date(message.envelope.date).toISOString()
+              : new Date().toISOString();
+
+            result.replies_found.push({
+              message_id: message.envelope.messageId || undefined,
+              sender_email: cleanFrom,
+              sender_name: senderName,
+              subject,
+              body_text: bodyText,
+              date: dateStr,
+            });
           }
         }
       }
-
-      result.new_replies_found = Array.from(senders);
     } finally {
       lock.release();
     }

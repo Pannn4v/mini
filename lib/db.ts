@@ -62,11 +62,30 @@ export interface OutboundLog {
   sent_at: string;
 }
 
+export interface ReplyRecord {
+  id: string;
+  lead_id: string;
+  campaign_id: string;
+  inbox_email: string;
+  sender_email: string;
+  sender_name: string;
+  recipient_name: string;
+  company_name: string;
+  city: string;
+  subject: string;
+  body_text: string;
+  received_at: string;
+  outbound_subject?: string;
+  outbound_body?: string;
+  created_at: string;
+}
+
 interface DatabaseSchema {
   inboxes: Inbox[];
   campaigns: Campaign[];
   leads: Lead[];
   logs: OutboundLog[];
+  replies?: ReplyRecord[];
 }
 
 // -----------------------------------------------------------------------------
@@ -382,7 +401,15 @@ export async function getLeads(campaignId?: string): Promise<Lead[]> {
         query = query.eq("campaign_id", campaignId);
       }
       const { data, error } = await query;
-      if (!error) return (data || []) as Lead[];
+      if (!error && data) {
+        const list = data as Lead[];
+        return list.map((l) => {
+          if (l.last_error && l.last_error.includes("[REPLIED]")) {
+            return { ...l, status: "REPLIED" as const };
+          }
+          return l;
+        });
+      }
     } catch (e) {
       console.warn("Supabase getLeads fallback:", e);
     }
@@ -450,6 +477,9 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<Le
               sanitized.status = value;
             } else if (value === "WAITING_FOLLOWUP" || value === "REPLIED") {
               sanitized.status = "SENT";
+              if (value === "REPLIED" && !sanitized.last_error) {
+                sanitized.last_error = `[REPLIED] ${new Date().toISOString()}`;
+              }
             }
           } else {
             sanitized[key] = value;
@@ -632,4 +662,118 @@ export async function getOutboundLogs(): Promise<OutboundLog[]> {
 
   const db = ensureDbFile();
   return db.logs;
+}
+
+// -----------------------------------------------------------------------------
+// REPLIES OPERATIONS (Unibox Inbound Store)
+// -----------------------------------------------------------------------------
+const REPLIES_FILE = path.join(DATA_DIR, "replies.json");
+
+function ensureRepliesFile(): ReplyRecord[] {
+  if (isReadOnlyFs()) return [];
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(REPLIES_FILE)) {
+      fs.writeFileSync(REPLIES_FILE, JSON.stringify([], null, 2), "utf-8");
+      return [];
+    }
+    const raw = fs.readFileSync(REPLIES_FILE, "utf-8");
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRepliesFile(replies: ReplyRecord[]) {
+  if (isReadOnlyFs()) return;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(REPLIES_FILE, JSON.stringify(replies, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("saveRepliesFile skipped (read-only filesystem):", e);
+  }
+}
+
+export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
+  if (supabase) {
+    try {
+      let query = supabase.from("replies").select("*").order("received_at", { ascending: false });
+      if (campaignId && campaignId !== "all") {
+        query = query.eq("campaign_id", campaignId);
+      }
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) return data as ReplyRecord[];
+    } catch {}
+  }
+
+  const localReplies = ensureRepliesFile();
+  if (campaignId && campaignId !== "all") {
+    return localReplies.filter((r) => r.campaign_id === campaignId);
+  }
+  return localReplies;
+}
+
+export async function saveReply(reply: Omit<ReplyRecord, "id" | "created_at">): Promise<ReplyRecord> {
+  const newEntry: ReplyRecord = {
+    ...reply,
+    id: `reply_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    created_at: new Date().toISOString(),
+  };
+
+  // 1. Try Supabase if table exists
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from("replies").insert(newEntry).select().single();
+      if (!error && data) {
+        const local = ensureRepliesFile();
+        if (!local.some((r) => r.sender_email === reply.sender_email && r.received_at === reply.received_at)) {
+          local.unshift(data as ReplyRecord);
+          saveRepliesFile(local);
+        }
+        return data as ReplyRecord;
+      }
+    } catch {}
+  }
+
+  // 2. Local JSON store fallback
+  const local = ensureRepliesFile();
+  const existingIdx = local.findIndex(
+    (r) =>
+      r.sender_email.toLowerCase() === reply.sender_email.toLowerCase() &&
+      (r.received_at === reply.received_at || r.subject === reply.subject)
+  );
+
+  if (existingIdx !== -1) {
+    local[existingIdx] = { ...local[existingIdx], ...newEntry, id: local[existingIdx].id };
+    saveRepliesFile(local);
+    return local[existingIdx];
+  } else {
+    local.unshift(newEntry);
+    saveRepliesFile(local);
+    return newEntry;
+  }
+}
+
+export async function deleteReply(id: string): Promise<boolean> {
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("replies").delete().eq("id", id);
+      if (!error) {
+        const local = ensureRepliesFile();
+        saveRepliesFile(local.filter((r) => r.id !== id));
+        return true;
+      }
+    } catch {}
+  }
+
+  const local = ensureRepliesFile();
+  const initialLen = local.length;
+  const filtered = local.filter((r) => r.id !== id);
+  saveRepliesFile(filtered);
+  return filtered.length < initialLen;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInboxes, getLeads, updateLead } from "@/lib/db";
+import { getInboxes, getLeads, updateLead, saveReply, getReplies } from "@/lib/db";
 import { scanInboxForReplies } from "@/lib/imap";
 
 export const dynamic = "force-dynamic";
@@ -51,8 +51,12 @@ async function handleSync(req: Request) {
     // 3. Fetch all leads to cross-reference
     const allLeads = await getLeads();
     const leadMapByEmail = new Map<string, typeof allLeads[0]>();
+    const targetLeadEmails = new Set<string>();
+
     allLeads.forEach((l) => {
-      leadMapByEmail.set(l.recipient_email.toLowerCase().trim(), l);
+      const clean = l.recipient_email.toLowerCase().trim();
+      leadMapByEmail.set(clean, l);
+      targetLeadEmails.add(clean);
     });
 
     const results = [];
@@ -60,22 +64,45 @@ async function handleSync(req: Request) {
 
     // 4. Scan each inbox sequentially (to avoid concurrent load)
     for (const inbox of activeInboxes) {
-      const scanResult = await scanInboxForReplies(inbox, 25);
-      results.push(scanResult);
+      const scanResult = await scanInboxForReplies(inbox, 30, targetLeadEmails);
+      results.push({
+        inbox: inbox.email,
+        replies_found_count: scanResult.replies_found.length,
+        error: scanResult.error,
+      });
 
-      for (const senderEmail of scanResult.new_replies_found) {
-        const matchedLead = leadMapByEmail.get(senderEmail);
-        if (matchedLead && matchedLead.status !== "REPLIED") {
-          // Auto-mark as REPLIED
-          await updateLead(matchedLead.id, {
-            status: "REPLIED",
-          });
-          autoRepliedLeads.push({
-            email: senderEmail,
+      for (const rep of scanResult.replies_found) {
+        const matchedLead = leadMapByEmail.get(rep.sender_email);
+        if (matchedLead) {
+          await saveReply({
             lead_id: matchedLead.id,
-            previous_status: matchedLead.status,
+            campaign_id: matchedLead.campaign_id,
+            inbox_email: inbox.email,
+            sender_email: rep.sender_email,
+            sender_name: rep.sender_name || matchedLead.recipient_name,
+            recipient_name: matchedLead.recipient_name,
+            company_name: matchedLead.company_name,
+            city: matchedLead.city,
+            subject: rep.subject,
+            body_text: rep.body_text,
+            received_at: rep.date,
+            outbound_subject: matchedLead.subject_template,
+            outbound_body: matchedLead.body_template,
           });
-          console.log(`[IMAP Auto-Sync] Matched reply from ${senderEmail}! Auto-marked lead ${matchedLead.id} as REPLIED.`);
+
+          if (matchedLead.status !== "REPLIED") {
+            await updateLead(matchedLead.id, {
+              status: "REPLIED",
+              last_error: `[REPLIED] ${rep.date}`,
+            });
+            autoRepliedLeads.push({
+              email: rep.sender_email,
+              lead_id: matchedLead.id,
+              previous_status: matchedLead.status,
+            });
+            matchedLead.status = "REPLIED";
+            console.log(`[IMAP Auto-Sync] Matched reply from ${rep.sender_email}! Auto-marked lead ${matchedLead.id} as REPLIED.`);
+          }
         }
       }
     }

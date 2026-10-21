@@ -26,7 +26,10 @@ import {
   FileCode,
   Eye,
   Copy,
-  Check
+  Check,
+  MessageSquare,
+  Inbox as MailboxIcon,
+  Search
 } from "lucide-react";
 
 interface Campaign {
@@ -69,6 +72,24 @@ interface Lead {
   last_error?: string;
 }
 
+interface ReplyRecord {
+  id: string;
+  lead_id: string;
+  campaign_id: string;
+  inbox_email: string;
+  sender_email: string;
+  sender_name: string;
+  recipient_name: string;
+  company_name: string;
+  city: string;
+  subject: string;
+  body_text: string;
+  received_at: string;
+  outbound_subject?: string;
+  outbound_body?: string;
+  created_at: string;
+}
+
 export default function Dashboard() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(() => {
@@ -95,9 +116,17 @@ export default function Dashboard() {
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<"campaigns" | "queue" | "sequences" | "inboxes" | "logs">("campaigns");
+  const [activeTab, setActiveTab] = useState<"campaigns" | "queue" | "sequences" | "inboxes" | "logs" | "unibox">("campaigns");
   const [loading, setLoading] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
+
+  // Unibox State
+  const [replies, setReplies] = useState<ReplyRecord[]>([]);
+  const [selectedReply, setSelectedReply] = useState<ReplyRecord | null>(null);
+  const [isSyncingReplies, setIsSyncingReplies] = useState(false);
+  const [replyFilterCampaign, setReplyFilterCampaign] = useState<string>("all");
+  const [replySearch, setReplySearch] = useState<string>("");
+  const [replySyncNotice, setReplySyncNotice] = useState<string | null>(null);
 
   // New Campaign Modal
   const [showCreateCampaign, setShowCreateCampaign] = useState(false);
@@ -213,11 +242,12 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const [cRes, iRes, lRes, logRes] = await Promise.all([
+      const [cRes, iRes, lRes, logRes, repRes] = await Promise.all([
         fetch("/api/campaigns"),
         fetch("/api/inboxes"),
         fetch("/api/leads"),
-        fetch("/api/logs")
+        fetch("/api/logs"),
+        fetch("/api/replies")
       ]);
 
       if (cRes.ok) {
@@ -244,8 +274,43 @@ export default function Dashboard() {
       if (iRes.ok) setInboxes(await iRes.json());
       if (lRes.ok) setAllLeads(await lRes.json());
       if (logRes.ok) setLogs(await logRes.json());
+      if (repRes && repRes.ok) {
+        const repData = await repRes.json();
+        if (repData.replies) {
+          setReplies(repData.replies);
+          setSelectedReply((prev) => {
+            if (prev && repData.replies.some((r: ReplyRecord) => r.id === prev.id)) {
+              return prev;
+            }
+            return repData.replies.length > 0 ? repData.replies[0] : null;
+          });
+        }
+      }
     } catch (e) {
       console.error("Fetch error:", e);
+    }
+  };
+
+  const handleManualSyncReplies = async () => {
+    setIsSyncingReplies(true);
+    setReplySyncNotice("Polling all active inboxes via IMAP (Port 993 SSL)...");
+    try {
+      const res = await fetch("/api/replies", { method: "POST" });
+      const data = await res.json();
+      if (data.replies) {
+        setReplies(data.replies);
+        if (data.replies.length > 0) {
+          setSelectedReply(data.replies[0]);
+        }
+      }
+      setReplySyncNotice(`Scan complete: checked ${data.checked_inboxes || inboxes.length} inboxes · ${data.new_replies_count || 0} new replies found`);
+      fetchData();
+      setTimeout(() => setReplySyncNotice(null), 5000);
+    } catch (err: any) {
+      setReplySyncNotice(`Sync warning: ${err.message}`);
+      setTimeout(() => setReplySyncNotice(null), 5000);
+    } finally {
+      setIsSyncingReplies(false);
     }
   };
 
@@ -269,6 +334,23 @@ export default function Dashboard() {
   const currentLeads = selectedCampaignId && selectedCampaignId !== "all"
     ? allLeads.filter((l) => l.campaign_id === selectedCampaignId)
     : allLeads;
+
+  // Filter replies for Unibox
+  const filteredReplies = replies.filter((r) => {
+    if (replyFilterCampaign !== "all" && r.campaign_id !== replyFilterCampaign) {
+      return false;
+    }
+    if (replySearch.trim()) {
+      const q = replySearch.toLowerCase().trim();
+      const matchCompany = (r.company_name || "").toLowerCase().includes(q);
+      const matchSender = (r.sender_name || "").toLowerCase().includes(q);
+      const matchEmail = (r.sender_email || "").toLowerCase().includes(q);
+      const matchSubject = (r.subject || "").toLowerCase().includes(q);
+      const matchBody = (r.body_text || "").toLowerCase().includes(q);
+      return matchCompany || matchSender || matchEmail || matchSubject || matchBody;
+    }
+    return true;
+  });
 
   const toggleCampaignStatus = async (campId: string, currentStatus: string) => {
     const nextStatus = currentStatus === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -801,9 +883,37 @@ export default function Dashboard() {
             >
               Outbound Logs ({logs.length})
             </button>
+            <button
+              onClick={() => {
+                setActiveTab("unibox");
+                fetchData();
+              }}
+              className={`px-3 py-1.5 text-xs font-mono rounded transition-all flex items-center gap-1.5 ${
+                activeTab === "unibox"
+                  ? "bg-white text-black font-semibold shadow-[0_0_12px_rgba(255,255,255,0.15)] border border-white"
+                  : "text-[#888888] hover:text-white hover:bg-white/[0.04]"
+              }`}
+            >
+              <MessageSquare className="h-3 w-3 text-emerald-400" />
+              Unibox ({replies.length})
+              {replies.length > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              )}
+            </button>
           </div>
 
           {/* Action buttons contextual to active tab */}
+          {activeTab === "unibox" && (
+            <button
+              onClick={handleManualSyncReplies}
+              disabled={isSyncingReplies}
+              className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded bg-white text-black font-semibold hover:bg-[#D4D4D4] transition-all disabled:opacity-50 shadow-[0_0_12px_rgba(255,255,255,0.15)]"
+            >
+              <RefreshCw className={`h-3 w-3 ${isSyncingReplies ? "animate-spin" : ""}`} />
+              {isSyncingReplies ? "Scanning Inboxes..." : "Sync Inboxes"}
+            </button>
+          )}
+
           {activeTab === "campaigns" && (
             <button
               onClick={() => setShowCreateCampaign(true)}
@@ -1544,6 +1654,232 @@ export default function Dashboard() {
                   })()}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: UNIBOX (Replies Hub & Inbound Thread Viewer) */}
+        {activeTab === "unibox" && (
+          <div className="space-y-4">
+            {/* Unibox Sub-Header / Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#0A0A0A] border border-white/[0.08] rounded-xl p-3 font-mono text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-white font-semibold">
+                  <MessageSquare className="h-4 w-4 text-emerald-400" />
+                  <span>Sovereign Unibox</span>
+                </div>
+                <span className="text-[#333]">|</span>
+                <span className="text-[#737373]">
+                  Polling all <strong className="text-white">{inboxes.filter((i) => i.status === "ACTIVE").length}</strong> active inboxes
+                </span>
+                {replySyncNotice && (
+                  <span className="text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded text-[11px]">
+                    {replySyncNotice}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={replyFilterCampaign}
+                  onChange={(e) => setReplyFilterCampaign(e.target.value)}
+                  className="bg-[#121212] border border-[#262626] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-white font-mono"
+                >
+                  <option value="all">All Campaigns ({replies.length})</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={handleManualSyncReplies}
+                  disabled={isSyncingReplies}
+                  className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded bg-white text-black font-semibold hover:bg-[#D4D4D4] transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isSyncingReplies ? "animate-spin" : ""}`} />
+                  {isSyncingReplies ? "Scanning..." : "Sync Inboxes"}
+                </button>
+              </div>
+            </div>
+
+            {/* Main Two-Pane Split View */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* LEFT PANE: List of Replies (5 cols) */}
+              <div className="lg:col-span-5 bg-[#0A0A0A] border border-white/[0.08] rounded-xl overflow-hidden flex flex-col h-[700px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+                {/* Search Bar */}
+                <div className="p-3 border-b border-[#262626] bg-[#121212]">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search company, contact, email..."
+                      value={replySearch}
+                      onChange={(e) => setReplySearch(e.target.value)}
+                      className="w-full bg-[#0A0A0A] border border-[#262626] rounded px-3 py-1.5 pl-8 text-xs font-mono text-white placeholder-[#555] focus:outline-none focus:border-white"
+                    />
+                    <Search className="h-3.5 w-3.5 text-[#555] absolute left-2.5 top-2" />
+                  </div>
+                </div>
+
+                {/* Reply Cards List */}
+                <div className="flex-1 overflow-y-auto divide-y divide-[#1A1A1A]">
+                  {filteredReplies.length === 0 ? (
+                    <div className="p-8 text-center text-[#737373] font-mono text-xs space-y-2">
+                      <MailboxIcon className="h-8 w-8 mx-auto text-[#444]" />
+                      <p className="font-semibold text-white">No prospect replies captured yet</p>
+                      <p className="text-[11px] text-[#555] max-w-xs mx-auto">
+                        Only verified inbound replies matching targets in your campaign queue are displayed here. All non-lead inbounds (GitHub, personal, spam) are blocked.
+                      </p>
+                    </div>
+                  ) : (
+                    filteredReplies.map((rep) => {
+                      const isSelected = selectedReply?.id === rep.id;
+                      return (
+                        <div
+                          key={rep.id}
+                          onClick={() => setSelectedReply(rep)}
+                          className={`p-3 cursor-pointer transition-all ${
+                            isSelected
+                              ? "bg-white/[0.08] border-l-2 border-emerald-400"
+                              : "hover:bg-[#141414]"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-xs text-white truncate max-w-[200px]">
+                              {rep.company_name || rep.sender_name || rep.sender_email}
+                            </span>
+                            <span className="text-[10px] font-mono text-[#737373]">
+                              {new Date(rep.received_at).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] font-mono text-emerald-400 font-medium truncate mb-1">
+                            {rep.sender_name ? `${rep.sender_name} · ` : ""}{rep.sender_email}
+                          </div>
+
+                          <div className="text-xs text-[#CCCCCC] truncate font-medium mb-1">
+                            {rep.subject}
+                          </div>
+
+                          <p className="text-[11px] text-[#737373] line-clamp-2 leading-relaxed">
+                            {rep.body_text}
+                          </p>
+
+                          <div className="mt-2 flex items-center justify-between text-[10px] font-mono text-[#555]">
+                            <span className="truncate max-w-[160px] text-[#888]">
+                              via {rep.inbox_email}
+                            </span>
+                            {rep.city && (
+                              <span className="bg-[#1A1A1A] px-1.5 py-0.5 rounded text-[#999]">
+                                {rep.city}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT PANE: Thread Detail View (7 cols) */}
+              <div className="lg:col-span-7 bg-[#0A0A0A] border border-white/[0.08] rounded-xl overflow-hidden flex flex-col h-[700px] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+                {!selectedReply ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#737373] font-mono text-xs">
+                    <Mail className="h-10 w-10 text-[#333] mb-3" />
+                    <p>Select a prospect reply from the left panel to inspect the conversation thread.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Thread Header */}
+                    <div className="p-4 bg-[#121212] border-b border-[#262626] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 font-mono">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-white">
+                            {selectedReply.company_name}
+                          </span>
+                          {selectedReply.city && (
+                            <span className="text-xs bg-[#222] text-[#AAA] px-2 py-0.5 rounded">
+                              {selectedReply.city}
+                            </span>
+                          )}
+                          <span className="text-xs bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded font-semibold">
+                            REPLIED
+                          </span>
+                        </div>
+                        <div className="text-xs text-[#888] flex items-center gap-2">
+                          <span>{selectedReply.sender_name || "Contact"}:</span>
+                          <a
+                            href={`mailto:${selectedReply.sender_email}`}
+                            className="text-white hover:underline font-semibold"
+                          >
+                            {selectedReply.sender_email}
+                          </a>
+                          <span className="text-[#444]">·</span>
+                          <span className="text-[#666]">via {selectedReply.inbox_email}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`mailto:${selectedReply.sender_email}?subject=${encodeURIComponent(
+                            selectedReply.subject.startsWith("Re:") ? selectedReply.subject : `Re: ${selectedReply.subject}`
+                          )}`}
+                          className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                        >
+                          <Mail className="h-3 w-3" />
+                          Reply via Mail
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Conversation Flow */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {/* Outbound Pitch Message Card */}
+                      <div className="bg-[#121212] border border-[#222] rounded-lg p-4 font-mono space-y-2">
+                        <div className="flex items-center justify-between text-xs text-[#737373] pb-2 border-b border-[#1F1F1F]">
+                          <div className="flex items-center gap-1.5 text-[#AAA]">
+                            <Send className="h-3 w-3 text-[#737373]" />
+                            <span>Outbound Pitch sent via <strong>{selectedReply.inbox_email}</strong></span>
+                          </div>
+                          <span className="text-[10px]">Step 1 Cold Outreach</span>
+                        </div>
+                        <div className="text-xs font-semibold text-[#DDD]">
+                          Subject: {selectedReply.outbound_subject || selectedReply.subject.replace(/^Re:\s*/i, "")}
+                        </div>
+                        <div className="text-xs text-[#999] whitespace-pre-wrap leading-relaxed pt-1 font-mono">
+                          {selectedReply.outbound_body || "Outbound template recorded for lead."}
+                        </div>
+                      </div>
+
+                      {/* Inbound Prospect Reply Card (Emerald Accent) */}
+                      <div className="bg-[#0E1712] border border-emerald-900/60 rounded-lg p-4 font-mono space-y-2 shadow-[0_0_20px_rgba(16,185,129,0.06)]">
+                        <div className="flex items-center justify-between text-xs pb-2 border-b border-emerald-900/40">
+                          <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Inbound Reply from {selectedReply.sender_name || selectedReply.sender_email}</span>
+                          </div>
+                          <span className="text-[10px] text-emerald-500/80">
+                            {new Date(selectedReply.received_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-white">
+                          Subject: {selectedReply.subject}
+                        </div>
+                        <div className="text-xs text-emerald-100/90 whitespace-pre-wrap leading-relaxed pt-1 font-mono bg-black/30 p-3 rounded border border-emerald-950">
+                          {selectedReply.body_text}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

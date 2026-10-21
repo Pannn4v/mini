@@ -175,3 +175,34 @@ CREATE POLICY "Anon full access on leads" ON public.leads FOR ALL TO anon USING 
 
 DROP POLICY IF EXISTS "Anon full access on outbound_logs" ON public.outbound_logs;
 CREATE POLICY "Anon full access on outbound_logs" ON public.outbound_logs FOR ALL TO anon USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- 5. REPLIES TABLE (Unibox Inbound Clearinghouse)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.replies (
+  id TEXT PRIMARY KEY,
+  lead_id TEXT REFERENCES public.leads(id) ON DELETE CASCADE,
+  campaign_id TEXT,
+  inbox_email TEXT NOT NULL,
+  sender_email TEXT NOT NULL,
+  sender_name TEXT,
+  recipient_name TEXT,
+  company_name TEXT,
+  city TEXT,
+  subject TEXT NOT NULL,
+  body_text TEXT NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL,
+  outbound_subject TEXT,
+  outbound_body TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_replies_sender_received ON public.replies(sender_email, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_replies_campaign_id ON public.replies(campaign_id);
+
+ALTER TABLE public.replies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role full access on replies" ON public.replies;
+CREATE POLICY "Service role full access on replies" ON public.replies FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Anon full access on replies" ON public.replies;
+CREATE POLICY "Anon full access on replies" ON public.replies FOR ALL TO anon USING (true) WITH CHECK (true);
+
