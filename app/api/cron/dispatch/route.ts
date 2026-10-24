@@ -170,16 +170,41 @@ async function handleDispatch(req: Request) {
     }
 
     // 7. Compile Dynamic Spintax & Personalization Tokens
-    const vars: Record<string, string> = {
-      first_name: (lead.recipient_name || "").split(" ")[0] || "there",
-      name: lead.recipient_name || "there",
-      company_name: lead.company_name || "your company",
-      company: lead.company_name || "your company",
-      city: lead.city || "your area",
-    };
+    const isFollowup = !!(lead as any).is_followup;
+    const parts = (lead.recipient_name || "").trim().split(/\s+/);
+    const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0] || "Sir";
+    const firstName = parts[0] || "there";
+    const city = lead.city || "your area";
 
-    const finalSubject = parseSpintax(lead.subject_template, vars);
-    const finalBody = parseSpintax(lead.body_template, vars);
+    let finalSubject = "";
+    let finalBody = "";
+
+    if (isFollowup) {
+      const cleanSubj = (lead.subject_template || "").replace(/^Re:\s*/i, "").trim();
+      finalSubject = `Re: ${cleanSubj}`;
+
+      if (lead.campaign_id === "camp_1792481395570_qjbo") {
+        // Supply (Contractors / Haulers)
+        finalBody = `Mr. ${lastName},\n\nFollowing up on your fleet availability in ${city} before we finalize regional routing schedules for upcoming pad mobilizations.\n\nBest,\nPandu Utama`;
+      } else if (lead.campaign_id === "camp_1792481404891_wyf9") {
+        // Demand (Operators / Producers)
+        finalBody = `Mr. ${lastName},\n\nFollowing up regarding standby waxy crude hauling capacity before wellsite mobilization windows lock for the month.\n\nBest,\nPandu Utama`;
+      } else {
+        // Generic fallback
+        finalBody = `Hi ${firstName},\n\nFollowing up on my previous note regarding ${lead.company_name || "your team"} before our schedule locks for the week.\n\nBest,\nPandu Utama`;
+      }
+    } else {
+      const vars: Record<string, string> = {
+        first_name: firstName,
+        name: lead.recipient_name || "there",
+        company_name: lead.company_name || "your company",
+        company: lead.company_name || "your company",
+        city: city,
+      };
+
+      finalSubject = parseSpintax(lead.subject_template, vars);
+      finalBody = parseSpintax(lead.body_template, vars);
+    }
 
     // 8. Dispatch Email via Google SMTP
     const transporter = createGmailTransporter(inbox);
@@ -263,13 +288,23 @@ async function handleDispatch(req: Request) {
       }, { status: 200 });
     }
 
-    // 9. Mark Lead as SENT & Update Inbox Counter
+    // 9. Mark Lead as SENT / FOLLOWED_UP & Update Inbox Counter
     const sentIso = new Date().toISOString();
-    await updateLead(lead.id, {
-      status: "SENT",
-      sent_at: sentIso,
-      assigned_inbox_id: inbox.id,
-    });
+    if (isFollowup) {
+      await updateLead(lead.id, {
+        status: "FOLLOWED_UP",
+        sent_at: sentIso,
+        assigned_inbox_id: inbox.id,
+        step: 2,
+      });
+    } else {
+      await updateLead(lead.id, {
+        status: "SENT",
+        sent_at: sentIso,
+        assigned_inbox_id: inbox.id,
+        step: 1,
+      });
+    }
 
     const todayEst = now.toLocaleDateString("en-US", { timeZone: "America/New_York" });
     const lastSentEst = inbox.last_sent_at
@@ -294,6 +329,8 @@ async function handleDispatch(req: Request) {
 
     return NextResponse.json({
       status: "DISPATCHED_SUCCESS",
+      type: isFollowup ? "GHOST_BUMP_STEP_2" : "FIRST_TOUCH_STEP_1",
+      step: isFollowup ? 2 : 1,
       lead: lead.recipient_email,
       inbox: inbox.email,
       subject: finalSubject,

@@ -38,7 +38,7 @@ export interface Lead {
   city: string;
   subject_template: string;
   body_template: string;
-  status: "PENDING" | "SENT" | "WAITING_FOLLOWUP" | "REPLIED" | "FAILED" | "SKIPPED";
+  status: "PENDING" | "SENT" | "FOLLOWED_UP" | "WAITING_FOLLOWUP" | "REPLIED" | "ARCHIVED" | "FAILED" | "SKIPPED";
   step?: number;
   followup_subject?: string;
   followup_body?: string;
@@ -49,6 +49,7 @@ export interface Lead {
   attempts?: number;
   last_error?: string;
   created_at: string;
+  is_followup?: boolean;
 }
 
 export interface OutboundLog {
@@ -526,8 +527,36 @@ export async function clearLeads(campaignId?: string): Promise<void> {
 // -----------------------------------------------------------------------------
 // ENGINE DISPATCHER QUERIES
 // -----------------------------------------------------------------------------
+export async function getFollowupsSentTodayCount(): Promise<number> {
+  const now = new Date();
+  const todayEstStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+  const startOfDayEst = new Date(`${todayEstStr}T00:00:00-05:00`).toISOString();
+
+  if (supabase) {
+    try {
+      const { count, error } = await supabase
+        .from("outbound_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "SUCCESS")
+        .ilike("subject", "Re:%")
+        .gte("sent_at", startOfDayEst);
+      if (!error && typeof count === "number") return count;
+    } catch (e) {
+      console.warn("Supabase count followups fallback:", e);
+    }
+  }
+
+  const db = ensureDbFile();
+  return (db.logs || []).filter(
+    (l) => l.status === "SUCCESS" && l.subject?.startsWith("Re:") && l.sent_at >= startOfDayEst
+  ).length;
+}
+
 export async function getNextDueLead(campaignId?: string): Promise<Lead | null> {
   const nowMs = Date.now();
+  const MAX_DAILY_FOLLOWUPS = 35;
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const threeDaysAgoIso = new Date(nowMs - THREE_DAYS_MS).toISOString();
 
   if (supabase) {
     try {
@@ -540,6 +569,27 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
         activeCampIds = camps.map((c) => c.id);
       }
 
+      // 1. Check if daily follow-up quota is still open (Capped at 35/day)
+      const followupsToday = await getFollowupsSentTodayCount();
+      if (followupsToday < MAX_DAILY_FOLLOWUPS) {
+        // Query next eligible follow-up (SENT >= 3 days ago, active campaign, not replied, not already followed up)
+        const { data: fData, error: fError } = await supabase
+          .from("leads")
+          .select("*")
+          .eq("status", "SENT")
+          .in("campaign_id", activeCampIds)
+          .lte("sent_at", threeDaysAgoIso)
+          .order("sent_at", { ascending: true })
+          .limit(1);
+
+        if (!fError && fData && fData.length > 0) {
+          const fCandidate = fData[0] as Lead;
+          fCandidate.is_followup = true;
+          return fCandidate;
+        }
+      }
+
+      // 2. Query next fresh lead (PENDING for the 115+ daily pool)
       const { data, error } = await supabase
         .from("leads")
         .select("*")
@@ -555,6 +605,7 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
           if ((candidate.attempts || 0) > 0 && new Date(candidate.scheduled_at).getTime() > nowMs) {
             return null;
           }
+          candidate.is_followup = false;
           return candidate;
         }
         return null;
@@ -570,6 +621,25 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
       ? new Set([campaignId])
       : new Set(db.campaigns.filter((c) => c.status === "ACTIVE").map((c) => c.id));
 
+  // Local fallback: Follow-ups first (capped at 35)
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+  const followupsTodayLocal = (db.logs || []).filter(
+    (l) => l.status === "SUCCESS" && l.subject?.startsWith("Re:") && l.sent_at >= todayDateStr
+  ).length;
+
+  if (followupsTodayLocal < MAX_DAILY_FOLLOWUPS) {
+    const fCandidates = db.leads
+      .filter((l) => activeCampIds.has(l.campaign_id) && l.status === "SENT" && l.sent_at && new Date(l.sent_at).getTime() <= nowMs - THREE_DAYS_MS)
+      .sort((a, b) => new Date(a.sent_at!).getTime() - new Date(b.sent_at!).getTime());
+
+    if (fCandidates.length > 0) {
+      const fLead = fCandidates[0];
+      fLead.is_followup = true;
+      return fLead;
+    }
+  }
+
+  // Local fallback: Fresh leads
   const candidates = db.leads
     .filter((l) => activeCampIds.has(l.campaign_id) && l.status === "PENDING")
     .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
@@ -579,6 +649,7 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
   if ((first.attempts || 0) > 0 && new Date(first.scheduled_at).getTime() > nowMs) {
     return null;
   }
+  first.is_followup = false;
   return first;
 }
 
