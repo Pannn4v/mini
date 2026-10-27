@@ -148,18 +148,33 @@ export async function scanInboxForReplies(
           const fromAddress = message.envelope.from[0].address;
           if (fromAddress) {
             const cleanFrom = fromAddress.toLowerCase().trim();
-            // Don't flag own address, system bounces, or mailer-daemons
-            if (
+            // Don't flag own address, system bounces, or automated no-reply mailers
+            const isSystemOrBot =
               cleanFrom === inbox.email.toLowerCase() ||
               cleanFrom.includes("mailer-daemon") ||
-              cleanFrom.includes("googlemail.com")
-            ) {
+              cleanFrom.includes("googlemail.com") ||
+              cleanFrom.includes("noreply") ||
+              cleanFrom.includes("no-reply") ||
+              cleanFrom.includes("donotreply") ||
+              cleanFrom.includes("notifications@") ||
+              cleanFrom.includes("security@");
+
+            if (isSystemOrBot) {
               continue;
             }
 
-            // Strict Lead Matching: If targetLeadEmails is supplied, ignore any message from outside leads!
-            if (targetLeadEmails && !targetLeadEmails.has(cleanFrom)) {
-              continue;
+            const rawSubject = message.envelope.subject || "";
+            const isDirectReply = rawSubject.toLowerCase().trim().startsWith("re:");
+
+            // Lead Matching Guard:
+            // Keep message if:
+            // 1. cleanFrom is in targetLeadEmails
+            // 2. OR subject starts with "re:" (direct prospect reply thread)
+            // 3. OR targetLeadEmails is undefined/empty
+            if (targetLeadEmails && targetLeadEmails.size > 0) {
+              if (!targetLeadEmails.has(cleanFrom) && !isDirectReply) {
+                continue;
+              }
             }
 
             const rawSource = message.source ? message.source.toString("utf-8") : "";

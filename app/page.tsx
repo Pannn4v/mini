@@ -314,11 +314,61 @@ export default function Dashboard() {
     }
   };
 
+  const lastImapSyncRef = useRef<number>(0);
+
+  const performAutoSync = async () => {
+    const now = Date.now();
+    // Guard: minimum 90 seconds between auto-polls to prevent hammering Gmail IMAP Port 993
+    if (now - lastImapSyncRef.current < 90_000 || isSyncingReplies) {
+      return;
+    }
+    lastImapSyncRef.current = now;
+    try {
+      const res = await fetch("/api/replies", { method: "POST" });
+      const data = await res.json();
+      if (data.replies) {
+        setReplies(data.replies);
+        setSelectedReply((prev) => {
+          if (prev && data.replies.some((r: ReplyRecord) => r.id === prev.id)) {
+            return prev;
+          }
+          return data.replies.length > 0 ? data.replies[0] : null;
+        });
+      }
+      fetchData();
+    } catch (e) {
+      console.warn("Auto-sync background check warning:", e);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    performAutoSync();
     const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+    // Auto-poll IMAP every 2 minutes while app is open
+    const imapInterval = setInterval(performAutoSync, 120_000);
+
+    const onFocus = () => {
+      performAutoSync();
+    };
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(imapInterval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
+
+  // When switching to the Unibox tab, trigger immediate sync if >= 45s since last check
+  useEffect(() => {
+    if (activeTab === "unibox") {
+      const now = Date.now();
+      if (now - lastImapSyncRef.current >= 45_000) {
+        performAutoSync();
+      }
+    }
+  }, [activeTab]);
 
   const activeCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || null;
 

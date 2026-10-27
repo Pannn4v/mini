@@ -554,9 +554,6 @@ export async function getFollowupsSentTodayCount(): Promise<number> {
 
 export async function getNextDueLead(campaignId?: string): Promise<Lead | null> {
   const nowMs = Date.now();
-  const MAX_DAILY_FOLLOWUPS = 35;
-  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-  const threeDaysAgoIso = new Date(nowMs - THREE_DAYS_MS).toISOString();
 
   if (supabase) {
     try {
@@ -569,27 +566,7 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
         activeCampIds = camps.map((c) => c.id);
       }
 
-      // 1. Check if daily follow-up quota is still open (Capped at 35/day)
-      const followupsToday = await getFollowupsSentTodayCount();
-      if (followupsToday < MAX_DAILY_FOLLOWUPS) {
-        // Query next eligible follow-up (SENT >= 3 days ago, active campaign, not replied, not already followed up)
-        const { data: fData, error: fError } = await supabase
-          .from("leads")
-          .select("*")
-          .eq("status", "SENT")
-          .in("campaign_id", activeCampIds)
-          .lte("sent_at", threeDaysAgoIso)
-          .order("sent_at", { ascending: true })
-          .limit(1);
-
-        if (!fError && fData && fData.length > 0) {
-          const fCandidate = fData[0] as Lead;
-          fCandidate.is_followup = true;
-          return fCandidate;
-        }
-      }
-
-      // 2. Query next fresh lead (PENDING for the 115+ daily pool)
+      // SINGLE-SHOT SNIPER INVARIANT: Zero automated follow-ups. Only dispatch fresh PENDING leads.
       const { data, error } = await supabase
         .from("leads")
         .select("*")
@@ -621,25 +598,7 @@ export async function getNextDueLead(campaignId?: string): Promise<Lead | null> 
       ? new Set([campaignId])
       : new Set(db.campaigns.filter((c) => c.status === "ACTIVE").map((c) => c.id));
 
-  // Local fallback: Follow-ups first (capped at 35)
-  const todayDateStr = new Date().toISOString().slice(0, 10);
-  const followupsTodayLocal = (db.logs || []).filter(
-    (l) => l.status === "SUCCESS" && l.subject?.startsWith("Re:") && l.sent_at >= todayDateStr
-  ).length;
-
-  if (followupsTodayLocal < MAX_DAILY_FOLLOWUPS) {
-    const fCandidates = db.leads
-      .filter((l) => activeCampIds.has(l.campaign_id) && l.status === "SENT" && l.sent_at && new Date(l.sent_at).getTime() <= nowMs - THREE_DAYS_MS)
-      .sort((a, b) => new Date(a.sent_at!).getTime() - new Date(b.sent_at!).getTime());
-
-    if (fCandidates.length > 0) {
-      const fLead = fCandidates[0];
-      fLead.is_followup = true;
-      return fLead;
-    }
-  }
-
-  // Local fallback: Fresh leads
+  // SINGLE-SHOT SNIPER INVARIANT (Local fallback): Fresh PENDING leads only. Zero automated follow-up bumps.
   const candidates = db.leads
     .filter((l) => activeCampIds.has(l.campaign_id) && l.status === "PENDING")
     .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());

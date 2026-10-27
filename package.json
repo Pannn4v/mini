@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "sync:daemon": "node daemon_sync.js",
     "lint": "next lint"
   },
   "dependencies": {
