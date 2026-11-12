@@ -1131,8 +1131,10 @@ export default function Dashboard() {
                 : campaigns
               ).map((camp) => {
                 const campLeads = allLeads.filter((l) => l.campaign_id === camp.id);
+                const cReplied = replies.filter((r) => r.campaign_id === camp.id).length || campLeads.filter((l) => l.status === "REPLIED").length;
                 const cSent = campLeads.filter((l) => l.status === "SENT").length;
                 const cTotal = campLeads.length;
+                const cPending = campLeads.filter((l) => l.status === "PENDING").length;
                 const isSelected = selectedCampaignId === camp.id;
 
                 return (
@@ -1194,7 +1196,7 @@ export default function Dashboard() {
                       </div>
 
                       {/* Lead Stats for this campaign */}
-                      <div className="mt-4 grid grid-cols-3 gap-2 bg-black/60 border border-white/[0.06] rounded-lg p-2.5 text-center font-mono text-xs tabular-nums">
+                      <div className="mt-4 grid grid-cols-4 gap-2 bg-black/60 border border-white/[0.06] rounded-lg p-2.5 text-center font-mono text-xs tabular-nums">
                         <div>
                           <div className="text-[10px] text-[#737373] uppercase">Total</div>
                           <div className="text-sm font-semibold text-white">{cTotal}</div>
@@ -1204,15 +1206,21 @@ export default function Dashboard() {
                           <div className="text-sm font-semibold text-white">{cSent}</div>
                         </div>
                         <div>
+                          <div className="text-[10px] text-[#737373] uppercase">Replied</div>
+                          <div className={`text-sm font-semibold ${cReplied > 0 ? "text-emerald-400 font-bold" : "text-white"}`}>
+                            {cReplied}
+                          </div>
+                        </div>
+                        <div>
                           <div className="text-[10px] text-[#737373] uppercase">Pending</div>
-                          <div className="text-sm font-semibold text-white">{cTotal - cSent}</div>
+                          <div className="text-sm font-semibold text-white">{cPending}</div>
                         </div>
                       </div>
 
                       <div className="mt-3 w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
                         <div 
                           className="bg-white h-full transition-all duration-300 shadow-[0_0_6px_rgba(255,255,255,0.3)]"
-                          style={{ width: `${cTotal > 0 ? (cSent / cTotal) * 100 : 0}%` }}
+                          style={{ width: `${cTotal > 0 ? ((cSent + cReplied) / cTotal) * 100 : 0}%` }}
                         />
                       </div>
                     </div>
@@ -1263,6 +1271,30 @@ export default function Dashboard() {
                           className="text-xs font-mono px-2.5 py-1 rounded bg-white/[0.05] hover:bg-white/[0.1] text-white border border-white/[0.12] transition-colors"
                         >
                           Leads Queue ({cTotal})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCampaignId(camp.id);
+                            setReplyFilterCampaign(camp.id);
+                            if (typeof window !== "undefined") {
+                              try {
+                                localStorage.setItem("mini_instantly_selected_campaign", camp.id);
+                              } catch (err) {}
+                            }
+                            setActiveTab("unibox");
+                          }}
+                          className={`text-xs font-mono px-2.5 py-1 rounded border transition-colors flex items-center gap-1.5 ${
+                            cReplied > 0
+                              ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/40 hover:bg-emerald-950/60 shadow-[0_0_8px_rgba(52,211,153,0.2)] font-semibold"
+                              : "bg-black hover:bg-white/[0.05] text-[#A3A3A3] hover:text-white border-white/[0.08]"
+                          }`}
+                          title={`View ${cReplied} inbound replies for ${camp.name}`}
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          Inbound ({cReplied})
                         </button>
 
                         <button
@@ -1385,13 +1417,15 @@ export default function Dashboard() {
                       >
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
-                            lead.status === "SENT"
+                            lead.status === "REPLIED"
+                              ? "bg-emerald-950/50 text-emerald-400 border border-emerald-500/40 shadow-[0_0_8px_rgba(52,211,153,0.3)] font-bold cursor-pointer"
+                              : lead.status === "SENT"
                               ? "bg-white/[0.08] text-white border border-white/20"
                               : lead.status === "FAILED"
                               ? "bg-rose-950/40 text-rose-400 border border-rose-500/30"
                               : "bg-sky-950/40 text-sky-400 border border-sky-500/30"
                           }`}>
-                            {lead.status === "SENT" ? "✓ Sent" : lead.status}
+                            {lead.status === "REPLIED" ? "● Replied" : lead.status === "SENT" ? "✓ Sent" : lead.status}
                           </span>
                         </td>
                         <td className="py-3 px-4 font-semibold text-white">
@@ -2167,12 +2201,29 @@ export default function Dashboard() {
               <span className="text-[11px] text-[#555]">
                 Status: <strong className="text-white">{inspectingLead.status}</strong> · Campaign: {inspectingLead.campaign_id}
               </span>
-              <button
-                onClick={() => setInspectingLead(null)}
-                className="px-4 py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-[#D4D4D4] transition-all"
-              >
-                Close Preview
-              </button>
+              <div className="flex items-center gap-2">
+                {inspectingLead.status === "REPLIED" && (
+                  <button
+                    onClick={() => {
+                      const campId = inspectingLead.campaign_id;
+                      setInspectingLead(null);
+                      setSelectedCampaignId(campId);
+                      setReplyFilterCampaign(campId);
+                      setActiveTab("unibox");
+                    }}
+                    className="px-3 py-1.5 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded hover:bg-emerald-900/60 transition-all flex items-center gap-1.5"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Open Thread in Unibox
+                  </button>
+                )}
+                <button
+                  onClick={() => setInspectingLead(null)}
+                  className="px-4 py-1.5 bg-white text-black text-xs font-semibold rounded hover:bg-[#D4D4D4] transition-all"
+                >
+                  Close Preview
+                </button>
+              </div>
             </div>
           </div>
         </div>

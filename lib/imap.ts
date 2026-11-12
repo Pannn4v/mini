@@ -92,7 +92,7 @@ export function parseEmailBody(mime: string): string {
  */
 export async function scanInboxForReplies(
   inbox: Inbox,
-  maxMessagesToCheck = 30,
+  maxMessagesToCheck = 80,
   targetLeadEmails?: Set<string>
 ): Promise<SyncResult> {
   const result: SyncResult = {
@@ -164,12 +164,20 @@ export async function scanInboxForReplies(
             }
 
             const rawSubject = message.envelope.subject || "";
-            const isDirectReply = rawSubject.toLowerCase().trim().startsWith("re:");
+            const lowerSubj = rawSubject.toLowerCase().trim();
+            const isDirectReply =
+              lowerSubj.startsWith("re:") ||
+              lowerSubj.startsWith("automatic reply:") ||
+              lowerSubj.startsWith("auto-reply:") ||
+              lowerSubj.startsWith("autoreply:") ||
+              lowerSubj.startsWith("out of office:") ||
+              lowerSubj.startsWith("fwd:") ||
+              Boolean(message.envelope.inReplyTo);
 
             // Lead Matching Guard:
             // Keep message if:
             // 1. cleanFrom is in targetLeadEmails
-            // 2. OR subject starts with "re:" (direct prospect reply thread)
+            // 2. OR message is a direct reply / auto-reply thread
             // 3. OR targetLeadEmails is undefined/empty
             if (targetLeadEmails && targetLeadEmails.size > 0) {
               if (!targetLeadEmails.has(cleanFrom) && !isDirectReply) {

@@ -406,7 +406,16 @@ export async function getLeads(campaignId?: string): Promise<Lead[]> {
         const list = data as Lead[];
         return list.map((l) => {
           if (l.last_error && (l.last_error.includes("[REPLIED]") || l.last_error.includes("[REPLY_DATA]:"))) {
-            return { ...l, status: "REPLIED" as const };
+            let compName = l.company_name;
+            if (l.last_error.includes("[REPLY_DATA]:")) {
+              try {
+                const payload = JSON.parse(l.last_error.replace("[REPLY_DATA]:", ""));
+                if (payload.company_name && payload.company_name !== "Company") {
+                  compName = payload.company_name;
+                }
+              } catch {}
+            }
+            return { ...l, company_name: compName, status: "REPLIED" as const };
           }
           return l;
         });
@@ -476,9 +485,13 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<Le
           if (key === "status") {
             if (ALLOWED_SUPABASE_STATUSES.has(value as string)) {
               sanitized.status = value;
-            } else if (value === "WAITING_FOLLOWUP" || value === "REPLIED") {
+            } else if (value === "WAITING_FOLLOWUP") {
               sanitized.status = "SENT";
-              // Never overwrite last_error if it is not explicitly provided in updates
+            } else if (value === "REPLIED") {
+              sanitized.status = "SENT";
+              if (updates.last_error) {
+                sanitized.last_error = updates.last_error;
+              }
             }
           } else {
             sanitized[key] = value;
@@ -728,6 +741,8 @@ function saveRepliesFile(replies: ReplyRecord[]) {
 }
 
 export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
+  const allMerged: Map<string, ReplyRecord> = new Map();
+
   if (supabase) {
     // 1. Try dedicated public.replies table
     try {
@@ -736,7 +751,12 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
         query = query.eq("campaign_id", campaignId);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) return data as ReplyRecord[];
+      if (!error && data && data.length > 0) {
+        for (const r of data as ReplyRecord[]) {
+          const key = `${r.sender_email.toLowerCase()}_${r.received_at || r.subject}`;
+          allMerged.set(key, r);
+        }
+      }
     } catch {}
 
     // 2. Zero-CapEx Fallback: Parse from existing public.leads table
@@ -747,14 +767,18 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        const parsedReplies: ReplyRecord[] = [];
         for (const l of data) {
           if (!l.last_error) continue;
           if (l.last_error.startsWith("[REPLY_DATA]:")) {
             try {
               const rawJson = l.last_error.replace("[REPLY_DATA]:", "");
               const payload = JSON.parse(rawJson);
-              parsedReplies.push({
+              const resolvedCompany =
+                payload.company_name ||
+                (l.company_name && l.company_name !== "Company" ? l.company_name : "") ||
+                "Prospect";
+              const resolvedCity = payload.city || l.city || "";
+              const replyRec: ReplyRecord = {
                 id: `rep_${l.id}`,
                 lead_id: l.id,
                 campaign_id: l.campaign_id,
@@ -762,41 +786,20 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
                 sender_email: l.recipient_email,
                 sender_name: payload.sender_name || l.recipient_name,
                 recipient_name: l.recipient_name,
-                company_name: l.company_name,
-                city: l.city,
+                company_name: resolvedCompany,
+                city: resolvedCity,
                 subject: payload.subject || "(No Subject)",
                 body_text: payload.body_text || "",
                 received_at: payload.received_at || l.sent_at || new Date().toISOString(),
                 outbound_subject: l.subject_template,
                 outbound_body: l.body_template,
                 created_at: payload.received_at || new Date().toISOString(),
-              });
+              };
+              const key = l.id ? `lead_${l.id}` : `${replyRec.sender_email.toLowerCase()}_${replyRec.received_at || replyRec.subject}`;
+              allMerged.set(key, replyRec);
               continue;
             } catch {}
-          } else if (l.last_error.startsWith("[REPLIED]")) {
-            const dateStr = l.last_error.replace("[REPLIED]", "").trim();
-            parsedReplies.push({
-              id: `rep_${l.id}`,
-              lead_id: l.id,
-              campaign_id: l.campaign_id,
-              inbox_email: l.assigned_inbox_id || "Gmail Inbox",
-              sender_email: l.recipient_email,
-              sender_name: l.recipient_name,
-              recipient_name: l.recipient_name,
-              company_name: l.company_name,
-              city: l.city,
-              subject: "Re: Prospect Reply Captured",
-              body_text: "Prospect inbound confirmed by IMAP scanner.",
-              received_at: dateStr || l.sent_at || new Date().toISOString(),
-              outbound_subject: l.subject_template,
-              outbound_body: l.body_template,
-              created_at: dateStr || new Date().toISOString(),
-            });
           }
-        }
-        if (parsedReplies.length > 0) {
-          parsedReplies.sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
-          return parsedReplies;
         }
       }
     } catch (e) {
@@ -804,11 +807,39 @@ export async function getReplies(campaignId?: string): Promise<ReplyRecord[]> {
     }
   }
 
+  // 3. Merge local JSON replies (ensures offline and legacy records are never dropped)
   const localReplies = ensureRepliesFile();
-  if (campaignId && campaignId !== "all") {
-    return localReplies.filter((r) => r.campaign_id === campaignId);
+  for (const r of localReplies) {
+    const key = r.lead_id ? `lead_${r.lead_id}` : `${r.sender_email.toLowerCase()}_${r.received_at || r.subject}`;
+    if (!allMerged.has(key)) {
+      allMerged.set(key, r);
+    } else {
+      // If local record has a richer company name or body text, enrich the merged record
+      const existing = allMerged.get(key)!;
+      if (
+        (!existing.company_name || existing.company_name === "Company" || existing.company_name === "Prospect") &&
+        r.company_name &&
+        r.company_name !== "Company"
+      ) {
+        existing.company_name = r.company_name;
+      }
+      if (!existing.campaign_id && r.campaign_id) {
+        existing.campaign_id = r.campaign_id;
+      }
+      if ((!existing.body_text || existing.body_text.length < r.body_text.length) && r.body_text) {
+        existing.body_text = r.body_text;
+        existing.subject = r.subject;
+      }
+    }
   }
-  return localReplies;
+
+  let list = Array.from(allMerged.values());
+  if (campaignId && campaignId !== "all") {
+    list = list.filter((r) => r.campaign_id === campaignId);
+  }
+
+  list.sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
+  return list;
 }
 
 export async function saveReply(reply: Omit<ReplyRecord, "id" | "created_at">): Promise<ReplyRecord> {
@@ -839,16 +870,22 @@ export async function saveReply(reply: Omit<ReplyRecord, "id" | "created_at">): 
           inbox_email: reply.inbox_email,
           sender_email: reply.sender_email,
           sender_name: reply.sender_name,
+          company_name: reply.company_name,
+          city: reply.city,
           subject: reply.subject,
           body_text: reply.body_text,
           received_at: reply.received_at,
         };
+        const updatePayload: Record<string, any> = {
+          last_error: `[REPLY_DATA]:${JSON.stringify(payload)}`,
+          status: "SENT",
+        };
+        if (reply.company_name && reply.company_name !== "Company") {
+          updatePayload.company_name = reply.company_name;
+        }
         await supabase
           .from("leads")
-          .update({
-            last_error: `[REPLY_DATA]:${JSON.stringify(payload)}`,
-            status: "SENT",
-          })
+          .update(updatePayload)
           .eq("id", reply.lead_id);
       } catch (e) {
         console.warn("Supabase lead last_error reply update fallback:", e);

@@ -22,14 +22,27 @@ function resolveMatchedLead(
   body_template?: string;
 } {
   const cleanFrom = rep.sender_email.toLowerCase().trim();
-  const cleanSubj = (rep.subject || "").toLowerCase().replace(/^re:\s*/i, "").trim();
+  const cleanSubj = (rep.subject || "")
+    .toLowerCase()
+    .replace(/^(re|automatic reply|auto-reply|autoreply|out of office|fwd):\s*/i, "")
+    .trim();
+
+  const extractRealCompany = (rawName?: string, subjectTemplate?: string, inboundSubject?: string) => {
+    if (rawName && rawName !== "Company" && rawName !== "Unknown") return rawName;
+    const subj = subjectTemplate || inboundSubject || "";
+    const parts = subj.split("/");
+    if (parts.length > 1 && parts[parts.length - 1].trim()) {
+      return parts[parts.length - 1].trim();
+    }
+    return rawName || "Prospect";
+  };
 
   // Tier 1: Exact sender email in active leads
   let match = allLeads.find((l) => l.recipient_email.toLowerCase().trim() === cleanFrom);
   if (match) {
     return {
       matchedLead: match,
-      company_name: match.company_name,
+      company_name: extractRealCompany(match.company_name, match.subject_template, rep.subject),
       recipient_name: rep.sender_name || match.recipient_name,
       city: match.city,
       campaign_id: match.campaign_id,
@@ -179,7 +192,7 @@ export async function POST(req: Request) {
 
     // 3. Scan each active inbox sequentially to preserve socket safety
     for (const inbox of activeInboxes) {
-      const scanResult = await scanInboxForReplies(inbox, 40, targetLeadEmails);
+      const scanResult = await scanInboxForReplies(inbox, 80, targetLeadEmails);
       syncReports.push({
         inbox: inbox.email,
         replies_found_count: scanResult.replies_found.length,
