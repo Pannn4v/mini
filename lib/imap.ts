@@ -92,7 +92,7 @@ export function parseEmailBody(mime: string): string {
  */
 export async function scanInboxForReplies(
   inbox: Inbox,
-  maxMessagesToCheck = 80,
+  maxMessagesToCheck = 250,
   targetLeadEmails?: Set<string>
 ): Promise<SyncResult> {
   const result: SyncResult = {

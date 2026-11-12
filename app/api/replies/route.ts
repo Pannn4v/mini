@@ -192,7 +192,7 @@ export async function POST(req: Request) {
 
     // 3. Scan each active inbox sequentially to preserve socket safety
     for (const inbox of activeInboxes) {
-      const scanResult = await scanInboxForReplies(inbox, 80, targetLeadEmails);
+      const scanResult = await scanInboxForReplies(inbox, 250, targetLeadEmails);
       syncReports.push({
         inbox: inbox.email,
         replies_found_count: scanResult.replies_found.length,

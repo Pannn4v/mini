@@ -201,7 +201,7 @@ async function handleSync(req: Request) {
 
     // 4. Scan each active inbox sequentially
     for (const inbox of activeInboxes) {
-      const scanResult = await scanInboxForReplies(inbox, 80, targetLeadEmails);
+      const scanResult = await scanInboxForReplies(inbox, 250, targetLeadEmails);
       results.push({
         inbox: inbox.email,
         replies_found_count: scanResult.replies_found.length,
